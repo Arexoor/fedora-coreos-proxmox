@@ -5,6 +5,10 @@
         inline: |
           #!/bin/bash
 
+          OUT=/etc/console-login-helper-messages/motd.d/22_arexoor.motd
+
+          mkdir -p "$(dirname "$OUT")"
+
           echo -e "\nWelcome on a server powered by\n" > ${OUT}
           echo -e '\e[33m                                        _            ' >> ${OUT}
           echo -e '\e[33m  __ _ _ __ _____  _____   ___  _ __ __| | _____   __' >> ${OUT}
@@ -346,6 +350,35 @@
           WantedBy=default.target
 
 # Enabling podman.socket for the User core
+  directories:
+    - path: /var/home/core/.config
+      user:
+        name: core
+      group:
+        name: core
+      mode: 0700
+
+    - path: /var/home/core/.config/systemd
+      user:
+        name: core
+      group:
+        name: core
+      mode: 0755
+
+    - path: /var/home/core/.config/systemd/user
+      user:
+        name: core
+      group:
+        name: core
+      mode: 0755
+
+    - path: /var/home/core/.config/systemd/user/sockets.target.wants
+      user:
+        name: core
+      group:
+        name: core
+      mode: 0755
+
   links:
     - path: /var/home/core/.config/systemd/user/sockets.target.wants/podman.socket
       target: /usr/lib/systemd/user/podman.socket
