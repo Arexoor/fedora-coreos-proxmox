@@ -160,7 +160,7 @@
             [[ "x${NEWUSERNAME}" == "x" ]] && NEWUSERNAME="admin" # NEWUSERNAME="core" use "admin" on geco-template
             getent passwd ${NEWUSERNAME} &> /dev/null || {
               echo -n "[INFO]: Cloudinit: add sytem user: ${NEWUSERNAME}... "
-              useradd --comment "Geco-iT CoreOS Administrator" --create-home \
+              useradd --comment "CoreOS Administrator" --create-home \
                       --groups adm,wheel,sudo,systemd-journal,docker ${NEWUSERNAME} &> /dev/null || { echo "[failed]"; exit 1; }
               echo "[done]"
             }
@@ -321,7 +321,6 @@
           Environment=TS_ACCEPT_DNS=false
           Environment=TS_USERSPACE=true
           Environment=TS_EXTRA_ARGS=--ssh
-          Environment=TS_DEST_IP=10.255.0.4
 
           [Service]
           Restart=always
