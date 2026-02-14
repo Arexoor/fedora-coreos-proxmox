@@ -284,6 +284,17 @@
           # to hide audit messages from the interactive console
           kernel.printk=4
 
+# creating podman network for the reverse proxy
+    - path: /etc/containers/systemd/users/1000/rproxy.network
+      mode: 0644
+      contents:
+        inline: |
+          [Network]
+          Subnet=10.255.0.0/24
+          Gateway=10.255.0.1
+          IPRange=10.255.0.128/25
+          NetworkName=rproxy
+
 # adding tailscale Quadlet
     - path: /etc/containers/systemd/users/1000/tailscale.container
       mode: 0644
@@ -301,14 +312,16 @@
 
           # Persist state across reboots
           Volume=tailscale:/var/lib/tailscale:Z
+          Network=rproxy.network
 
           # Configuration
           Environment=TS_STATE_DIR=/var/lib/tailscale
           Environment=TS_HOSTNAME=coreos-central
           Environment=TS_AUTH_ONCE=true
-          Environment=TS_ACCEPT_DNS=true
+          Environment=TS_ACCEPT_DNS=false
           Environment=TS_USERSPACE=true
-          Environment=TS_EXTRA_ARGS: —ssh
+          Environment=TS_EXTRA_ARGS=--ssh
+          Environment=TS_DEST_IP=10.255.0.4
 
           [Service]
           Restart=always
@@ -335,6 +348,7 @@
           # Persist state across reboots
           Volume=dockhand:/app/data:Z
           Volume=/run/user/1000/podman/podman.sock:/var/run/docker.sock:z
+          Network=rproxy.network
 
           # Configuration
           PublishPort=3000:3000
