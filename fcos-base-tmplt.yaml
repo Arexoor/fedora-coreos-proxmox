@@ -5,18 +5,16 @@
         inline: |
           #!/bin/bash
 
-          OUT=/etc/console-login-helper-messages/motd.d/22_arexoor.motd
+          OUT=/etc/motd.d/00_arexoor.motd
 
           mkdir -p "$(dirname "$OUT")"
 
           echo -e "\nWelcome on a server powered by\n" > ${OUT}
           echo -e '\e[33m                                        _            ' >> ${OUT}
           echo -e '\e[33m  __ _ _ __ _____  _____   ___  _ __ __| | _____   __' >> ${OUT}
-          echo -e '\e[33m / _` | '__/ _ \ \/ / _ \ / _ \| '__/ _` |/ _ \ \ / /' >> ${OUT}
+          echo -e '\e[33m / _` | '\''__/ _ \ \/ / _ \ / _ \| '\''__/ _` |/ _ \ \ / /' >> ${OUT}
           echo -e '\e[33m| (_| | | |  __/>  < (_) | (_) | | | (_| |  __/\ V /' >> ${OUT}
           echo -e '\e[33m \__,_|_|  \___/_/\_\___/ \___/|_|(_)__,_|\___| \_/\n\n' >> ${OUT}
-          eval "$(grep -E "^(NAME=|VARIANT=)" /etc/os-release)" && echo -e "\e[33mOperating System:\e[0m ${NAME} ${VARIANT}" >> ${OUT}
-          eval "$(grep ^OSTREE_VERSION /etc/os-release)" && echo -e "\e[33mVersion:\e[0m ${OSTREE_VERSION}" >> ${OUT}
           echo -e "\e[33mKernel:\e[0m $(uname -r)" >> ${OUT}
           echo -ne "\e[33mCPU:\e[0m $(grep ^processor /proc/cpuinfo | wc -l)" >> ${OUT}
           echo "$(grep "^model name" /proc/cpuinfo | head -n1 | awk -F: '{print $2}' | awk -F@ '{print $1}')" >> ${OUT}
@@ -248,7 +246,7 @@
             nmcli connection reload
             nmcli networking off
             nmcli networking on
-            systemctl restart geco-motd.service
+            systemctl restart arexoor-motd.service
             systemctl restart console-login-helper-messages-motdgen.service
           }
 
@@ -263,7 +261,7 @@
           exit 0
 
 # arexoor-issue
-    - path: /etc/console-login-helper-messages/issue.d/00_arexoor.issue
+    - path: /etc/issue.d/00_arexoor.issue
       mode: 0644
       contents:
         inline: |
