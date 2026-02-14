@@ -3,6 +3,13 @@
 
 Fedora CoreOS template for proxmox with cloudinit support
 
+## My changes
+Changed the branding
+Enabled rootless podman socket for user core
+Enabel lingering for user core
+Deploy tailscale container with ssh support
+Deploy dockhand container with podman socket access
+
 ## Create FCOS VM Template
 
 ### Configuration
