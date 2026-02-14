@@ -345,7 +345,22 @@
           [Install]
           WantedBy=default.target
 
+# Enabling podman.socket for the User core
+  directories:
+    - path: /home/core/.config/systemd/user
+      mode: 0755
+      user:
+        name: core
+      group:
+        name: core
 
+  links:
+    - path: /home/core/.config/systemd/user/sockets.target.wants/podman.socket
+      target: /usr/lib/systemd/user/podman.socket
+      user:
+        name: core
+      group:
+        name: core
 
 # arexoor-motd.service
 systemd:
@@ -431,21 +446,3 @@ systemd:
 
         [Install]
         WantedBy=multi-user.target
-
-# Enabling podman.socket for the User core
-storage:
-  directories:
-    - path: /home/core/.config/systemd/user
-      mode: 0755
-      user:
-        name: core
-      group:
-        name: core
-
-  links:
-    - path: /home/core/.config/systemd/user/sockets.target.wants/podman.socket
-      target: /usr/lib/systemd/user/podman.socket
-      user:
-        name: core
-      group:
-        name: core
