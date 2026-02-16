@@ -316,7 +316,6 @@
 
           # Configuration
           Environment=TS_STATE_DIR=/var/lib/tailscale
-          Environment=TS_HOSTNAME=coreos-central
           Environment=TS_AUTH_ONCE=true
           Environment=TS_ACCEPT_DNS=false
           Environment=TS_USERSPACE=true
