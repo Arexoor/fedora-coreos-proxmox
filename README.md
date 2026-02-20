@@ -9,6 +9,7 @@ Enabled rootless podman socket for user core
 Enabel lingering for user core
 Deploy tailscale container with ssh support
 Deploy dockhand container with podman socket access
+Added virtiofs auto mounting
 
 ## Create FCOS VM Template
 

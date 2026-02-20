@@ -1,7 +1,7 @@
 #!/bin/bash
 
 #set -e
- 
+
 vmid="$1"
 phase="$2"
 
@@ -9,6 +9,7 @@ phase="$2"
 COREOS_TMPLT=/opt/fcos-tmplt.yaml
 COREOS_FILES_PATH=/etc/pve/geco-pve/coreos
 YQ="/usr/local/bin/yq read --exitStatus --printMode v --stripComments --"
+VMCONF="/etc/pve/qemu-server/${vmid}.conf"
 
 # ==================================================================================================================================================================
 # functions()
@@ -19,7 +20,7 @@ setup_fcoreosct()
         local ARCH=x86_64
         local OS=unknown-linux-gnu # Linux
         local DOWNLOAD_URL=https://github.com/coreos/fcct/releases/download
- 
+
         [[ -x /usr/local/bin/fcos-ct ]]&& [[ "x$(/usr/local/bin/fcos-ct --version | awk '{print $NF}')" == "x${CT_VER}" ]]&& return 0
         echo "Setup Fedora CoreOS config transpiler..."
         rm -f /usr/local/bin/fcos-ct
@@ -55,7 +56,7 @@ then
 	[[ -e ${COREOS_FILES_PATH}/${vmid}.ign ]]&& exit 0 # already done
 
 	mkdir -p ${COREOS_FILES_PATH} || exit 1
-		
+
 	# check config
 	cipasswd="$(qm cloudinit dump ${vmid} user | ${YQ} - 'password' 2> /dev/null)" || true # can be empty
 	[[ "x${cipasswd}" != "x" ]]&& VALIDCONFIG=true
@@ -87,9 +88,9 @@ then
 	echo "      overwrite: true" >> ${COREOS_FILES_PATH}/${vmid}.yaml
 	echo "      contents:" >> ${COREOS_FILES_PATH}/${vmid}.yaml
 	echo "        inline: |" >> ${COREOS_FILES_PATH}/${vmid}.yaml
-	echo -e "          ${hostname,,}\n" >> ${COREOS_FILES_PATH}/${vmid}.yaml 
+	echo -e "          ${hostname,,}\n" >> ${COREOS_FILES_PATH}/${vmid}.yaml
 	echo "[done]"
-	
+
 	echo -n "Fedora CoreOS: Generate yaml network block... "
 	netcards="$(qm cloudinit dump ${vmid} network | ${YQ} - 'config[*].name' 2> /dev/null | wc -l)"
 	nameservers="$(qm cloudinit dump ${vmid} network | ${YQ} - "config[${netcards}].address[*]" | paste -s -d ";" -)"
@@ -117,7 +118,7 @@ then
 		echo -e "\n          [ipv4]" >> ${COREOS_FILES_PATH}/${vmid}.yaml
 		echo "          method=manual" >> ${COREOS_FILES_PATH}/${vmid}.yaml
 		echo "          addresses=${ipv4}/${netmask}" >> ${COREOS_FILES_PATH}/${vmid}.yaml
-		echo "          gateway=${gw}" >> ${COREOS_FILES_PATH}/${vmid}.yaml 
+		echo "          gateway=${gw}" >> ${COREOS_FILES_PATH}/${vmid}.yaml
 		echo "          dns=${nameservers}" >> ${COREOS_FILES_PATH}/${vmid}.yaml
 		echo -e "          dns-search=${searchdomain}\n" >> ${COREOS_FILES_PATH}/${vmid}.yaml
 	done
@@ -128,6 +129,33 @@ then
 		cat "${COREOS_TMPLT}" >> ${COREOS_FILES_PATH}/${vmid}.yaml
 		echo "[done]"
 	}
+
+	echo -n "Fedora CoreOS: Generate virtiofs mount block... "
+    if [[ -f "${VMCONF}" ]]; then
+        grep ^virtiofs "${VMCONF}" | while read -r line; do
+            # example line:
+            # virtiofs0: container-volumes,expose-acl=1
+
+            tag=$(echo "$line" | awk -F'[: ,]' '{print $2}')
+            mountpoint="/var/mnt/${tag}"
+            mountpoint_name="var-mnt-${tag}.mount"
+
+            # Create mount unit
+            echo "    - name: ${mountpoint_name}" >> ${COREOS_FILES_PATH}/${vmid}.yaml
+            echo "      enabled: true" >> ${COREOS_FILES_PATH}/${vmid}.yaml
+            echo "      contents: |" >> ${COREOS_FILES_PATH}/${vmid}.yaml
+            echo "        [Unit]" >> ${COREOS_FILES_PATH}/${vmid}.yaml
+            echo "        Description=Mount ${tag} directory" >> ${COREOS_FILES_PATH}/${vmid}.yaml
+            echo -e "\n        [Mount]" >> ${COREOS_FILES_PATH}/${vmid}.yaml
+            echo "        What=${tag}" >> ${COREOS_FILES_PATH}/${vmid}.yaml
+            echo "        Where=${mountpoint}" >> ${COREOS_FILES_PATH}/${vmid}.yaml
+            echo "        Type=virtiofs" >> ${COREOS_FILES_PATH}/${vmid}.yaml
+            echo "        Options=rw,relatime" >> ${COREOS_FILES_PATH}/${vmid}.yaml
+            echo -e "\n        [Install]" >> ${COREOS_FILES_PATH}/${vmid}.yaml
+            echo "        WantedBy=multi-user.target" >> ${COREOS_FILES_PATH}/${vmid}.yaml
+        done
+    fi
+    echo "[done]"
 
 	echo -n "Fedora CoreOS: Generate ignition config... "
 	/usr/local/bin/fcos-ct 	--pretty --strict \
