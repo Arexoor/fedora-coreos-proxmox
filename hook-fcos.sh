@@ -131,14 +131,17 @@ then
 	}
 
 	echo -n "Fedora CoreOS: Generate virtiofs mount block... "
-    if [[ -f "${VMCONF}" ]]; then
+	echo -e "\n# Create Virtiofs filesystem mounts" >> ${COREOS_FILES_PATH}/${vmid}.yaml
+	if [[ -f "${VMCONF}" ]]; then
         grep ^virtiofs "${VMCONF}" | while read -r line; do
-            # example line:
-            # virtiofs0: container-volumes,expose-acl=1
 
-            tag=$(echo "$line" | awk -F'[: ,]' '{print $2}')
+            tag=$(echo "$line" | awk -F'[ ,]' '{print $2}')
+            [[ -z "$tag" ]] && continue
+
             mountpoint="/var/mnt/${tag}"
             mountpoint_name="var-mnt-${tag}.mount"
+
+            echo "Create Virtiofs mount ${mountpoint_name}"
 
             # Create mount unit
             echo "    - name: ${mountpoint_name}" >> ${COREOS_FILES_PATH}/${vmid}.yaml
