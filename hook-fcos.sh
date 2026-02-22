@@ -8,6 +8,7 @@ phase="$2"
 # global vars
 COREOS_TMPLT=/opt/fcos-tmplt.yaml
 COREOS_FILES_PATH=/etc/pve/geco-pve/coreos
+SNIPPETS_FILES_PATH=/var/lib/vz/snippets
 YQ="/usr/local/bin/yq read --exitStatus --printMode v --stripComments --"
 VMCONF="/etc/pve/qemu-server/${vmid}.conf"
 
@@ -49,10 +50,10 @@ if [[ "${phase}" == "pre-start" ]]
 then
 
     echo -n "Fedora CoreOS: Generate virtiofs mount block... "
-	echo -e "\n# Create Virtiofs filesystem mounts" >> ${COREOS_FILES_PATH}/${vmid}.yaml
 	if [[ -f "${VMCONF}" ]]; then
 	    # only run ones
-            echo "mounts:" >> ${COREOS_FILES_PATH}/${vmid}-vendor-data.yaml
+		> "${SNIPPETS_FILES_PATH}/${vmid}-vendor-data.yaml"
+        echo "mounts:" >> ${SNIPPETS_FILES_PATH}/${vmid}-vendor-data.yaml
 
             grep ^virtiofs "${VMCONF}" | while read -r line; do
 
@@ -64,13 +65,13 @@ then
 
                 echo "Create Virtiofs mount ${mountpoint_name}"
 
-                # Create mount unit in ${COREOS_FILES_PATH}
-                echo "   - name: virtiofs-${tag}" >> ${COREOS_FILES_PATH}/${vmid}-vendor-data.yaml
-                echo "     type: virtiofs" >> ${COREOS_FILES_PATH}/${vmid}-vendor-data.yaml
-                echo "     what: ${tag}" >> ${COREOS_FILES_PATH}/${vmid}-vendor-data.yaml
-                echo "     where: ${mountpoint}" >> ${COREOS_FILES_PATH}/${vmid}-vendor-data.yaml
-                echo "     options: rw,relatime" >> ${COREOS_FILES_PATH}/${vmid}-vendor-data.yaml
-                echo "     after_network: true" >> ${COREOS_FILES_PATH}/${vmid}-vendor-data.yaml
+                # Create mount unit in ${SNIPPETS_FILES_PATH}
+                echo "   - name: virtiofs-${tag}" >> ${SNIPPETS_FILES_PATH}/${vmid}-vendor-data.yaml
+                echo "     type: virtiofs" >> ${SNIPPETS_FILES_PATH}/${vmid}-vendor-data.yaml
+                echo "     what: ${tag}" >> ${SNIPPETS_FILES_PATH}/${vmid}-vendor-data.yaml
+                echo "     where: ${mountpoint}" >> ${SNIPPETS_FILES_PATH}/${vmid}-vendor-data.yaml
+                echo "     options: rw,relatime" >> ${SNIPPETS_FILES_PATH}/${vmid}-vendor-data.yaml
+                echo "     after_network: true" >> ${SNIPPETS_FILES_PATH}/${vmid}-vendor-data.yaml
 
                 # echo "    - name: ${mountpoint_name}" >> ${COREOS_FILES_PATH}/${vmid}.yaml
                 # echo "      enabled: true" >> ${COREOS_FILES_PATH}/${vmid}.yaml
@@ -86,7 +87,7 @@ then
                 # echo "        WantedBy=multi-user.target" >> ${COREOS_FILES_PATH}/${vmid}.yaml
             done
             # Set mount units as cloudunit meta
-            qm set ${vmid} --cicustom "vendor=${COREOS_FILES_PATH}/${vmid}-vendor-data.yaml"
+            qm set ${vmid} --cicustom "vendor=local:snippets/${vmid}-vendor-data.yaml"
 	fi
     echo "[done]"
 
