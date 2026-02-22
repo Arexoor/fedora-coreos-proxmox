@@ -165,14 +165,15 @@
               echo "[done]"
             }
             # passwd
-            NEWPASSWORD="$(${YQ} ${CIPATH}/user-data 'password' 2> /dev/null)"
-            [[ -n "${NEWPASSWORD}" ]]&& [[ "x${NEWPASSWORD}" != "x$(grep ^${NEWUSERNAME} /etc/shadow | awk -F: '{print $2}')" ]]&& {
-              echo -n "[INFO]: Cloudinit: set password for user ${NEWUSERNAME}... "
-              sed -e "/^${NEWUSERNAME}/d" -i /etc/shadow &> /dev/null || { echo "[failed]"; exit 1; }
-              echo "${NEWUSERNAME}:${NEWPASSWORD}:18000:0:99999:7:::" >> /etc/shadow || { echo "[failed]"; exit 1; }
-              chage --lastday "$(date +%Y-%m-%d)" ${NEWUSERNAME} &> /dev/null || { echo "[failed]"; exit 1; }
-              echo "[done]"
-            }
+            if NEWPASSWORD="$(${YQ} ${CIPATH}/user-data 'password' 2> /dev/null)"; then
+              [[ -n "${NEWPASSWORD}" ]]&& [[ "x${NEWPASSWORD}" != "x$(grep ^${NEWUSERNAME} /etc/shadow | awk -F: '{print $2}')" ]]&& {
+                echo -n "[INFO]: Cloudinit: set password for user ${NEWUSERNAME}... "
+                sed -e "/^${NEWUSERNAME}/d" -i /etc/shadow &> /dev/null || { echo "[failed]"; exit 1; }
+                echo "${NEWUSERNAME}:${NEWPASSWORD}:18000:0:99999:7:::" >> /etc/shadow || { echo "[failed]"; exit 1; }
+                chage --lastday "$(date +%Y-%m-%d)" ${NEWUSERNAME} &> /dev/null || { echo "[failed]"; exit 1; }
+                echo "[done]"
+              }
+            fi
             # ssh key
             [[ -e /var/home/${NEWUSERNAME}/.ssh/authorized_keys.d/ignition ]] || {
               install --directory --owner=${NEWUSERNAME} --group=${NEWUSERNAME} \
@@ -247,7 +248,6 @@
             nmcli networking off
             nmcli networking on
             systemctl restart arexoor-motd.service
-            systemctl restart console-login-helper-messages-motdgen.service
           }
 
           echo -n "[INFO]: Cloudinit: save instance id... "
@@ -405,7 +405,6 @@ systemd:
       contents: |
         [Unit]
         Description=arexoor Motd
-        Before=console-login-helper-messages-motdgen.service
         After=network-online.target
 
         [Service]

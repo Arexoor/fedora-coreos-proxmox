@@ -47,6 +47,49 @@ setup_yq
 #
 if [[ "${phase}" == "pre-start" ]]
 then
+
+    echo -n "Fedora CoreOS: Generate virtiofs mount block... "
+	echo -e "\n# Create Virtiofs filesystem mounts" >> ${COREOS_FILES_PATH}/${vmid}.yaml
+	if [[ -f "${VMCONF}" ]]; then
+	    # only run ones
+            echo "mounts:" >> ${COREOS_FILES_PATH}/${vmid}-vendor-data.yaml
+
+            grep ^virtiofs "${VMCONF}" | while read -r line; do
+
+                tag=$(echo "$line" | awk -F'[ ,]' '{print $2}')
+                [[ -z "$tag" ]] && continue
+
+                mountpoint="/var/mnt/${tag}"
+                mountpoint_name="var-mnt-${tag}.mount"
+
+                echo "Create Virtiofs mount ${mountpoint_name}"
+
+                # Create mount unit in ${COREOS_FILES_PATH}
+                echo "   - name: virtiofs-${tag}" >> ${COREOS_FILES_PATH}/${vmid}-vendor-data.yaml
+                echo "     type: virtiofs" >> ${COREOS_FILES_PATH}/${vmid}-vendor-data.yaml
+                echo "     what: ${tag}" >> ${COREOS_FILES_PATH}/${vmid}-vendor-data.yaml
+                echo "     where: ${mountpoint}" >> ${COREOS_FILES_PATH}/${vmid}-vendor-data.yaml
+                echo "     options: rw,relatime" >> ${COREOS_FILES_PATH}/${vmid}-vendor-data.yaml
+                echo "     after_network: true" >> ${COREOS_FILES_PATH}/${vmid}-vendor-data.yaml
+
+                # echo "    - name: ${mountpoint_name}" >> ${COREOS_FILES_PATH}/${vmid}.yaml
+                # echo "      enabled: true" >> ${COREOS_FILES_PATH}/${vmid}.yaml
+                # echo "      contents: |" >> ${COREOS_FILES_PATH}/${vmid}.yaml
+                # echo "        [Unit]" >> ${COREOS_FILES_PATH}/${vmid}.yaml
+                # echo "        Description=Mount ${tag} directory" >> ${COREOS_FILES_PATH}/${vmid}.yaml
+                # echo -e "\n        [Mount]" >> ${COREOS_FILES_PATH}/${vmid}.yaml
+                # echo "        What=${tag}" >> ${COREOS_FILES_PATH}/${vmid}.yaml
+                # echo "        Where=${mountpoint}" >> ${COREOS_FILES_PATH}/${vmid}.yaml
+                # echo "        Type=virtiofs" >> ${COREOS_FILES_PATH}/${vmid}.yaml
+                # echo "        Options=rw,relatime" >> ${COREOS_FILES_PATH}/${vmid}.yaml
+                # echo -e "\n        [Install]" >> ${COREOS_FILES_PATH}/${vmid}.yaml
+                # echo "        WantedBy=multi-user.target" >> ${COREOS_FILES_PATH}/${vmid}.yaml
+            done
+            # Set mount units as cloudunit meta
+            qm set ${vmid} --cicustom "vendor=${COREOS_FILES_PATH}/${vmid}-vendor-data.yaml"
+	fi
+    echo "[done]"
+
 	instance_id="$(qm cloudinit dump ${vmid} meta | ${YQ} - 'instance-id')"
 
 	# same cloudinit config ?
@@ -129,36 +172,6 @@ then
 		cat "${COREOS_TMPLT}" >> ${COREOS_FILES_PATH}/${vmid}.yaml
 		echo "[done]"
 	}
-
-	echo -n "Fedora CoreOS: Generate virtiofs mount block... "
-	echo -e "\n# Create Virtiofs filesystem mounts" >> ${COREOS_FILES_PATH}/${vmid}.yaml
-	if [[ -f "${VMCONF}" ]]; then
-        grep ^virtiofs "${VMCONF}" | while read -r line; do
-
-            tag=$(echo "$line" | awk -F'[ ,]' '{print $2}')
-            [[ -z "$tag" ]] && continue
-
-            mountpoint="/var/mnt/${tag}"
-            mountpoint_name="var-mnt-${tag}.mount"
-
-            echo "Create Virtiofs mount ${mountpoint_name}"
-
-            # Create mount unit
-            echo "    - name: ${mountpoint_name}" >> ${COREOS_FILES_PATH}/${vmid}.yaml
-            echo "      enabled: true" >> ${COREOS_FILES_PATH}/${vmid}.yaml
-            echo "      contents: |" >> ${COREOS_FILES_PATH}/${vmid}.yaml
-            echo "        [Unit]" >> ${COREOS_FILES_PATH}/${vmid}.yaml
-            echo "        Description=Mount ${tag} directory" >> ${COREOS_FILES_PATH}/${vmid}.yaml
-            echo -e "\n        [Mount]" >> ${COREOS_FILES_PATH}/${vmid}.yaml
-            echo "        What=${tag}" >> ${COREOS_FILES_PATH}/${vmid}.yaml
-            echo "        Where=${mountpoint}" >> ${COREOS_FILES_PATH}/${vmid}.yaml
-            echo "        Type=virtiofs" >> ${COREOS_FILES_PATH}/${vmid}.yaml
-            echo "        Options=rw,relatime" >> ${COREOS_FILES_PATH}/${vmid}.yaml
-            echo -e "\n        [Install]" >> ${COREOS_FILES_PATH}/${vmid}.yaml
-            echo "        WantedBy=multi-user.target" >> ${COREOS_FILES_PATH}/${vmid}.yaml
-        done
-    fi
-    echo "[done]"
 
 	echo -n "Fedora CoreOS: Generate ignition config... "
 	/usr/local/bin/fcos-ct 	--pretty --strict \
