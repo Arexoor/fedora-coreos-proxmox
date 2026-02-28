@@ -249,6 +249,9 @@
             exit 1
           }
 
+          # virtiofs läuft immer, unabhängig von cloudinit änderungen
+          setup_virtiofs_mounts
+
           cloudinit_instanceid="$(${YQ} ${CIPATH}/meta-data 'instance-id')"
           if [[ -e /var/.cloudinit ]]
           then
@@ -359,8 +362,6 @@
             nmcli networking on
             systemctl restart arexoor-motd.service
           }
-
-          setup_virtiofs_mounts
 
           echo -n "[INFO]: Cloudinit: save instance id... "
           echo "${cloudinit_instanceid}" > /var/.cloudinit
