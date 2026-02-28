@@ -208,7 +208,7 @@
             done
 
             # Cleanup orphaned units (were managed by us, but no longer in vendor-data)
-            local needs_daemon_reload=false
+            local needs_daemon_reload=0
             for unit_file in "${!active_units[@]}"; do
               [[ "${active_units[${unit_file}]}" == "confirmed" ]] && continue
 
@@ -224,10 +224,10 @@
               echo -n "[INFO]: Cloudinit: removing unit file ${unit_file}... "
               rm -f "${unit_path}" && echo "[done]" || echo "[failed]"
 
-              needs_daemon_reload=true
+              needs_daemon_reload=1
             done
 
-            ${needs_daemon_reload} && {
+            [[ ${needs_daemon_reload} -eq 1 ]] && {
               echo -n "[INFO]: Cloudinit: reloading systemd after cleanup... "
               systemctl daemon-reload && echo "[done]" || echo "[failed]"
             }
