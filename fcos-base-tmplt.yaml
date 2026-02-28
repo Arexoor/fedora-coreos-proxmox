@@ -221,8 +221,13 @@
               echo -n "[INFO]: Cloudinit: disabling ${unit_file}... "
               systemctl disable "${unit_file}" 2>/dev/null && echo "[done]" || echo "[not enabled]"
 
+              mountpoint="$(grep ^Where= "${unit_path}" | cut -d= -f2)"
               echo -n "[INFO]: Cloudinit: removing unit file ${unit_file}... "
               rm -f "${unit_path}" && echo "[done]" || echo "[failed]"
+
+              if [[ -n "${mountpoint}" ]] && [[ -d "${mountpoint}" ]]; then
+                  rmdir "${mountpoint}" 2>/dev/null && echo "[done]" || echo "[not empty, skipping]"
+              fi
 
               needs_daemon_reload=1
             done

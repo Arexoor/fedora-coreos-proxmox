@@ -61,7 +61,7 @@ then
             old_hash="$(md5sum "${SNIPPETS_FILES_PATH}/${vmid}-vendor-data.yaml" | awk '{print $1}')"
 
         > "${SNIPPETS_FILES_PATH}/${vmid}-vendor-data.yaml"
-        echo "mounts:" >> "${SNIPPETS_FILES_PATH}/${vmid}-vendor-data.yaml"
+        echo "\nmounts:" >> "${SNIPPETS_FILES_PATH}/${vmid}-vendor-data.yaml"
 
         grep ^virtiofs "${VMCONF}" | while read -r line; do
             tag=$(echo "$line" | awk -F'[ ,]' '{print $2}')
