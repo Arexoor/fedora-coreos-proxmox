@@ -231,6 +231,7 @@
               echo -n "[INFO]: Cloudinit: reloading systemd after cleanup... "
               systemctl daemon-reload && echo "[done]" || echo "[failed]"
             }
+            return 0
           }
 
           # ===================================================================================
