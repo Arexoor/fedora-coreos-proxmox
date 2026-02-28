@@ -124,6 +124,115 @@
             echo ${1-0}.${2-0}.${3-0}.${4-0}
           }
 
+          setup_virtiofs_mounts() {
+            local vendor_data="${CIPATH}/vendor-data"
+            local MANAGED_MARKER="# managed-by=cloudinit-virtiofs"
+
+            # Collect all currently managed unit files on the system
+            declare -A active_units
+            for existing_unit in /etc/systemd/system/*.mount; do
+              [[ -e "${existing_unit}" ]] || continue
+              grep -q "^${MANAGED_MARKER}$" "${existing_unit}" 2>/dev/null && \
+                active_units["$(basename "${existing_unit}")"]="orphan" # assume orphan until confirmed
+            done
+
+            # No vendor-data: stop+disable+remove all managed units
+            [[ ! -e "${vendor_data}" ]] && {
+              echo "[INFO]: Cloudinit: no vendor-data found, skipping virtiofs mounts..."
+            }
+
+            local mount_count=0
+            if [[ -e "${vendor_data}" ]]; then
+              mount_count="$(${YQ} ${vendor_data} 'mounts[*].name' 2>/dev/null | wc -l)" || mount_count=0
+            fi
+
+            # Process mounts from vendor-data
+            for (( i=0; i<${mount_count}; i++ )); do
+              local name what where type options after_network unit_file
+
+              name="$(${YQ} ${vendor_data} "mounts[${i}].name" 2>/dev/null)"       || continue
+              what="$(${YQ} ${vendor_data} "mounts[${i}].what" 2>/dev/null)"       || continue
+              where="$(${YQ} ${vendor_data} "mounts[${i}].where" 2>/dev/null)"     || continue
+              type="$(${YQ} ${vendor_data} "mounts[${i}].type" 2>/dev/null)"       || continue
+              options="$(${YQ} ${vendor_data} "mounts[${i}].options" 2>/dev/null)" || options=""
+              after_network="$(${YQ} ${vendor_data} "mounts[${i}].after_network" 2>/dev/null)" || after_network="false"
+
+              unit_file="$(systemd-escape --path --suffix=mount "${where}")"
+              local unit_path="/etc/systemd/system/${unit_file}"
+
+              # Mark as confirmed (not an orphan)
+              active_units["${unit_file}"]="confirmed"
+
+              # Build unit content
+              local unit_content="${MANAGED_MARKER}
+          [Unit]
+          Description=Mount VirtioFS ${name} directory"
+              [[ "${after_network,,}" == "true" ]] && \
+                unit_content+="
+          After=network-online.target
+          Wants=network-online.target"
+              unit_content+="
+
+          [Mount]
+          What=${what}
+          Where=${where}
+          Type=${type}"
+              [[ -n "${options}" ]] && unit_content+="
+          Options=${options}"
+              unit_content+="
+
+          [Install]
+          WantedBy=multi-user.target"
+
+              # Skip if unchanged
+              if [[ -e "${unit_path}" ]] && [[ "x$(cat "${unit_path}")" == "x${unit_content}" ]]; then
+                echo "[INFO]: Cloudinit: mount unit ${unit_file} unchanged, skipping..."
+                continue
+              fi
+
+              echo -n "[INFO]: Cloudinit: writing systemd mount unit ${unit_file}... "
+              echo "${unit_content}" > "${unit_path}" || { echo "[failed]"; continue; }
+              echo "[done]"
+
+              [[ ! -d "${where}" ]] && {
+                echo -n "[INFO]: Cloudinit: creating mountpoint ${where}... "
+                mkdir -p "${where}" || { echo "[failed]"; continue; }
+                echo "[done]"
+              }
+
+              echo -n "[INFO]: Cloudinit: enabling and starting ${unit_file}... "
+              systemctl daemon-reload && \
+              systemctl enable "${unit_file}" && \
+              systemctl start "${unit_file}" || { echo "[failed]"; continue; }
+              echo "[done]"
+            done
+
+            # Cleanup orphaned units (were managed by us, but no longer in vendor-data)
+            local needs_daemon_reload=false
+            for unit_file in "${!active_units[@]}"; do
+              [[ "${active_units[${unit_file}]}" == "confirmed" ]] && continue
+
+              local unit_path="/etc/systemd/system/${unit_file}"
+              echo "[INFO]: Cloudinit: orphaned mount unit detected: ${unit_file}"
+
+              echo -n "[INFO]: Cloudinit: stopping ${unit_file}... "
+              systemctl stop "${unit_file}" 2>/dev/null && echo "[done]" || echo "[not active]"
+
+              echo -n "[INFO]: Cloudinit: disabling ${unit_file}... "
+              systemctl disable "${unit_file}" 2>/dev/null && echo "[done]" || echo "[not enabled]"
+
+              echo -n "[INFO]: Cloudinit: removing unit file ${unit_file}... "
+              rm -f "${unit_path}" && echo "[done]" || echo "[failed]"
+
+              needs_daemon_reload=true
+            done
+
+            ${needs_daemon_reload} && {
+              echo -n "[INFO]: Cloudinit: reloading systemd after cleanup... "
+              systemctl daemon-reload && echo "[done]" || echo "[failed]"
+            }
+          }
+
           # ===================================================================================
           # main()
           [[ ! -e /dev/sr0 ]]&& {
@@ -249,6 +358,8 @@
             nmcli networking on
             systemctl restart arexoor-motd.service
           }
+
+          setup_virtiofs_mounts
 
           echo -n "[INFO]: Cloudinit: save instance id... "
           echo "${cloudinit_instanceid}" > /var/.cloudinit
