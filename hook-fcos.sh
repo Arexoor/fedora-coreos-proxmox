@@ -56,9 +56,9 @@ then
     echo -n "Fedora CoreOS: Generate virtiofs mount block... "
     if [[ -f "${VMCONF}" ]]; then
 
-        old_vendor_data=""
+        old_hash=""
         [[ -f "${SNIPPETS_FILES_PATH}/${vmid}-vendor-data.yaml" ]] && \
-            old_vendor_data="$(cat "${SNIPPETS_FILES_PATH}/${vmid}-vendor-data.yaml")"
+            old_hash="$(md5sum "${SNIPPETS_FILES_PATH}/${vmid}-vendor-data.yaml" | awk '{print $1}')"
 
         > "${SNIPPETS_FILES_PATH}/${vmid}-vendor-data.yaml"
         echo "mounts:" >> "${SNIPPETS_FILES_PATH}/${vmid}-vendor-data.yaml"
@@ -79,15 +79,14 @@ then
             echo "     after_network: true"     >> "${SNIPPETS_FILES_PATH}/${vmid}-vendor-data.yaml"
         done
 
-        current_cicustom="$(qm config ${vmid} --current | grep ^cicustom | awk '{print $2}')"
-        expected_cicustom="vendor=local:snippets/${vmid}-vendor-data.yaml"
+        new_hash="$(md5sum "${SNIPPETS_FILES_PATH}/${vmid}-vendor-data.yaml" | awk '{print $1}')"
+        cicustom_path="vendor=local:snippets/${vmid}-vendor-data.yaml"
 
-        if [[ "x${current_cicustom}" != "x${expected_cicustom}" ]] || \
-           [[ "x${old_vendor_data}" != "x${new_vendor_data}" ]]; then
+        if [[ "x${old_hash}" != "x${new_hash}" ]]; then
             echo "Fedora CoreOS: vendor-data changed, applying..."
             rm -f /var/lock/qemu-server/lock-${vmid}.conf
             pvesh set /nodes/$(hostname)/qemu/${vmid}/config \
-                --cicustom "${expected_cicustom}" 2>/dev/null || { echo "[failed]"; exit 1; }
+                --cicustom "${cicustom_path}" 2>/dev/null || { echo "[failed]"; exit 1; }
             touch /var/lock/qemu-server/lock-${vmid}.conf
             NEEDS_RESTART=true
         fi
