@@ -53,7 +53,7 @@ then
     # ==================================================================================================================================================================
     # Virtiofs: vendor-data snippet generieren
     # ==================================================================================================================================================================
-    echo -n "Fedora CoreOS: Generate virtiofs mount block... "
+    echo "Fedora CoreOS: Generate virtiofs mount block... "
     if [[ -f "${VMCONF}" ]]; then
 
         old_hash=""
@@ -69,7 +69,7 @@ then
 
             mountpoint="/var/mnt/${tag}"
             mountpoint_name="var-mnt-${tag}.mount"
-            echo -n "Create Virtiofs mount ${mountpoint_name}"
+            echo "Create Virtiofs mount ${mountpoint_name}"
 
             echo "   - name: virtiofs-${tag}"  >> "${SNIPPETS_FILES_PATH}/${vmid}-vendor-data.yaml"
             echo "     type: virtiofs"          >> "${SNIPPETS_FILES_PATH}/${vmid}-vendor-data.yaml"
@@ -83,7 +83,7 @@ then
         cicustom_path="vendor=local:snippets/${vmid}-vendor-data.yaml"
 
         if [[ "x${old_hash}" != "x${new_hash}" ]]; then
-            echo -n "Fedora CoreOS: vendor-data changed, applying..."
+            echo "Fedora CoreOS: vendor-data changed, applying..."
             rm -f /var/lock/qemu-server/lock-${vmid}.conf
             pvesh set /nodes/$(hostname)/qemu/${vmid}/config \
                 --cicustom "${cicustom_path}" 2>/dev/null || { echo "[failed]"; exit 1; }
