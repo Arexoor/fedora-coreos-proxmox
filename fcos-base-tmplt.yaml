@@ -489,9 +489,10 @@
       mode: 0644
       contents:
         inline: |
+          [storage]
           #https://github.com/containers/storage/blob/main/docs/containers-storage.conf.5.md
-          driver="overlay"
-          imagestore="/var/mnt/image-storage"
+          driver = "overlay"
+          imagestore = "/var/mnt/image-storage"
 
     - path: /etc/zincati/config.d/55-updates-strategy.toml
       contents:
