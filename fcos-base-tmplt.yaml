@@ -477,6 +477,31 @@
           [Install]
           WantedBy=default.target
 
+    - path: /etc/containers/containers.conf
+      mode: 0644
+      contents:
+        inline: |
+          [engine]
+          # volume path override
+          volume_path = "/var/mnt/volume-storage"
+
+    - path: /etc/containers/storage.conf
+      mode: 0644
+      contents:
+        inline: |
+          #https://github.com/containers/storage/blob/main/docs/containers-storage.conf.5.md
+          imagestore="/var/mnt/image-storage"
+
+    - path: /etc/zincati/config.d/55-updates-strategy.toml
+      contents:
+        inline: |
+          [updates]
+          strategy = "periodic"
+          [[updates.periodic.window]]
+          days = [ "Sat", "Sun" ]
+          start_time = "6:30"
+          length_minutes = 60
+
 # Enabling podman.socket for the User core
   directories:
     - path: /var/home/core/.config
