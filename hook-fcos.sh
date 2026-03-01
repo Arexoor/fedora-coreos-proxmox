@@ -58,6 +58,7 @@ then
 
         old_hash=""
         [[ -f "${SNIPPETS_FILES_PATH}/${vmid}-vendor-data.yaml" ]] && \
+            pvesh get /nodes/$(hostname)/qemu/${vmid}/config 2>/dev/null | grep -q cicustom && \
             old_hash="$(md5sum "${SNIPPETS_FILES_PATH}/${vmid}-vendor-data.yaml" | awk '{print $1}')"
 
         > "${SNIPPETS_FILES_PATH}/${vmid}-vendor-data.yaml"
