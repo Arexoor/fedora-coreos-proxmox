@@ -61,7 +61,7 @@ then
             old_hash="$(md5sum "${SNIPPETS_FILES_PATH}/${vmid}-vendor-data.yaml" | awk '{print $1}')"
 
         > "${SNIPPETS_FILES_PATH}/${vmid}-vendor-data.yaml"
-        echo "\nmounts:" >> "${SNIPPETS_FILES_PATH}/${vmid}-vendor-data.yaml"
+        echo "mounts:" >> "${SNIPPETS_FILES_PATH}/${vmid}-vendor-data.yaml"
 
         grep ^virtiofs "${VMCONF}" | while read -r line; do
             tag=$(echo "$line" | awk -F'[ ,]' '{print $2}')
@@ -69,7 +69,7 @@ then
 
             mountpoint="/var/mnt/${tag}"
             mountpoint_name="var-mnt-${tag}.mount"
-            echo "Create Virtiofs mount ${mountpoint_name}"
+            echo -n "Create Virtiofs mount ${mountpoint_name}"
 
             echo "   - name: virtiofs-${tag}"  >> "${SNIPPETS_FILES_PATH}/${vmid}-vendor-data.yaml"
             echo "     type: virtiofs"          >> "${SNIPPETS_FILES_PATH}/${vmid}-vendor-data.yaml"
@@ -83,7 +83,7 @@ then
         cicustom_path="vendor=local:snippets/${vmid}-vendor-data.yaml"
 
         if [[ "x${old_hash}" != "x${new_hash}" ]]; then
-            echo "Fedora CoreOS: vendor-data changed, applying..."
+            echo -n "Fedora CoreOS: vendor-data changed, applying..."
             rm -f /var/lock/qemu-server/lock-${vmid}.conf
             pvesh set /nodes/$(hostname)/qemu/${vmid}/config \
                 --cicustom "${cicustom_path}" 2>/dev/null || { echo "[failed]"; exit 1; }
