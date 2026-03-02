@@ -76,7 +76,7 @@ then
             echo "     type: virtiofs"          >> "${SNIPPETS_FILES_PATH}/${vmid}-vendor-data.yaml"
             echo "     what: ${tag}"            >> "${SNIPPETS_FILES_PATH}/${vmid}-vendor-data.yaml"
             echo "     where: ${mountpoint}"    >> "${SNIPPETS_FILES_PATH}/${vmid}-vendor-data.yaml"
-            echo "     options: rw,relatime"    >> "${SNIPPETS_FILES_PATH}/${vmid}-vendor-data.yaml"
+            echo "     options: rw,relatime,defcontext=\"system_u:object_r:container_file_t:s0\""    >> "${SNIPPETS_FILES_PATH}/${vmid}-vendor-data.yaml"
             echo "     after_network: true"     >> "${SNIPPETS_FILES_PATH}/${vmid}-vendor-data.yaml"
         done
 

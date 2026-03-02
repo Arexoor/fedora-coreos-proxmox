@@ -11,6 +11,10 @@ Deploy tailscale container with ssh support
 Deploy dockhand container with podman socket access
 Added virtiofs auto mounting
 
+## Permissions
+VirtioFS folder on the host need to be owned by user 1000:1000
+
+
 ## Create FCOS VM Template
 
 ### Configuration
