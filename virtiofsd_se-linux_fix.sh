@@ -1,4 +1,4 @@
-VIRTIOFS_LINK="/usr/lib/qemu/virtiofsd"
+VIRTIOFS_LINK="/usr/libexec/virtiofsd"
 
 # Original nach virtiofsd.orig umleiten
 dpkg-divert --local --rename --add "$VIRTIOFS_LINK"
