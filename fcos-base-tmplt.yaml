@@ -466,9 +466,12 @@
           Volume=/run/user/1000/podman/podman.sock:/var/run/docker.sock:z
           Network=rproxy.network
 
+          # Security permissions
+          UserNS=keep-id
+          SecurityLabelType=container_runtime_t
+
           # Configuration
           PublishPort=3000:3000
-          SecurityLabelType=container_runtime_t
 
           [Service]
           Restart=always
@@ -484,6 +487,13 @@
           [engine]
           # volume path override
           volume_path = "/var/mnt/volume-storage"
+
+    - path: /var/home/core/.config/containers/containers.conf
+      mode: 0644
+      contents:
+        inline: |
+          [containers]
+          log_size_max=10485760
 
     - path: /etc/containers/storage.conf
       mode: 0644
