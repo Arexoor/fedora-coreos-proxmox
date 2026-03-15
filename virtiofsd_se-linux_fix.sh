@@ -7,3 +7,5 @@ cat > ${VIRTIOFS_LINK} << EOF
 #!/bin/bash
 exec "${VIRTIOFS_LINK}.distrib" --xattrmap=:map::user.virtiofs.: --security-label "\$@"
 EOF
+
+chmod +x ${VIRTIOFS_LINK}
