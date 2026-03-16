@@ -462,7 +462,7 @@
           AutoUpdate=registry
 
           # Persist state across reboots
-          Volume=dockhand:/app/data:Z
+          Volume=dockhand:/app/data:Z,U
           Volume=/run/user/1000/podman/podman.sock:/var/run/docker.sock:z
           Network=rproxy.network
 
