@@ -507,8 +507,8 @@
         inline: |
           [Unit]
           Description=dockhand
-          After=network-online.target
-          Wants=network-online.target
+          After=network-online.target var-mnt-volume\x2dstorage.mount
+          Wants=network-online.target var-mnt-volume\x2dstorage.mount
           After=socket-proxy-dockhand.container
           Requires=socket-proxy-dockhand.container
 
