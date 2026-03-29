@@ -530,6 +530,7 @@
           [Service]
           Restart=always
           TimeoutStartSec=300
+          ExecStartPre=mkdir -p /var/mnt/volume-storage/dockhand/_data
 
           [Install]
           WantedBy=default.target
