@@ -413,6 +413,14 @@
           IPRange=10.255.0.128/25
           NetworkName=rproxy
 
+    - path: /etc/containers/systemd/users/1000/socket-proxy-dockhand.network
+      mode: 0644
+      contents:
+        inline: |
+          [Network]
+          NetworkName=socket-proxy-dockhand
+          Internal=true
+
 # adding tailscale Quadlet
     - path: /etc/containers/systemd/users/1000/tailscale.container
       mode: 0644
@@ -446,6 +454,52 @@
           [Install]
           WantedBy=default.target
 
+    - path: /etc/containers/systemd/users/1000/socket-proxy-dockhand.container
+      mode: 0644
+      contents:
+        inline: |
+          [Unit]
+          Description=socket-proxy-dockhand
+          After=network-online.target
+          Wants=network-online.target
+
+          [Container]
+          Image=tecnativa/docker-socket-proxy:latest
+          ContainerName=socket-proxy-dockhand
+          AutoUpdate=registry
+
+          # Persist state across reboots
+          Volume=/run/user/1000/podman/podman.sock:/var/run/docker.sock:z
+          Network=socket-proxy-dockhand.network
+
+          # Security permissions
+          SecurityLabelType=container_runtime_t
+
+          # Required for Dockhand core functionality
+          Environment=CONTAINERS=1
+          Environment=IMAGES=1
+          Environment=NETWORKS=1
+          Environment=VOLUMES=1
+          Environment=EVENTS=1
+          Environment=POST=1
+          Environment=DELETE=1
+          # Required for dashboard host info and disk usage
+          Environment=INFO=1
+          Environment=SYSTEM=1
+          # Required for vulnerability scanning
+          Environment=ALLOW_START=1
+          Environment=ALLOW_STOP=1
+          Environment=ALLOW_RESTARTS=1
+          # Optional: enable for terminal access
+          Environment=EXEC=1
+
+          [Service]
+          Restart=always
+          TimeoutStartSec=300
+
+          [Install]
+          WantedBy=default.target
+
 # adding dockhand Quadlet
     - path: /etc/containers/systemd/users/1000/dockhand.container
       mode: 0644
@@ -462,13 +516,11 @@
           AutoUpdate=registry
 
           # Persist state across reboots
-          Volume=dockhand:/app/data:Z,U
-          Volume=/run/user/1000/podman/podman.sock:/var/run/docker.sock:z
+          Volume=/var/mnt/volume-storage/dockhand/_data:/app/data:Z
           Network=rproxy.network
+          Network=socket-proxy-dockhand.network
 
-          # Security permissions
-          UserNS=keep-id
-          SecurityLabelType=container_runtime_t
+          Environment=HOST_DATA_DIR=/var/mnt/volume-storage/dockhand/_data
 
           # Configuration
           PublishPort=3000:3000
