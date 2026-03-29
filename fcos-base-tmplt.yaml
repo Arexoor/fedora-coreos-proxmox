@@ -518,11 +518,11 @@
           AutoUpdate=registry
 
           # Persist state across reboots
-          Volume=/var/mnt/volume-storage/dockhand/_data:/app/data:Z
+          Volume=/var/mnt/volume-storage/dockhand/_data:/var/mnt/volume-storage/dockhand/_data:Z
           Network=rproxy.network
           Network=socket-proxy-dockhand.network
 
-          Environment=HOST_DATA_DIR=/var/mnt/volume-storage/dockhand/_data
+          Environment=DATA_DIR=/var/mnt/volume-storage/dockhand/_data
 
           # Configuration
           PublishPort=3000:3000
