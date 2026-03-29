@@ -464,7 +464,7 @@
           Wants=network-online.target
 
           [Container]
-          Image=tecnativa/docker-socket-proxy:latest
+          Image=ghcr.io/tecnativa/docker-socket-proxy:latest
           ContainerName=socket-proxy-dockhand
           AutoUpdate=registry
 
@@ -509,6 +509,8 @@
           Description=dockhand
           After=network-online.target
           Wants=network-online.target
+          After=socket-proxy-dockhand.container
+          Requires=socket-proxy-dockhand.container
 
           [Container]
           Image=docker.io/fnsys/dockhand:latest
