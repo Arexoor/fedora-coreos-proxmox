@@ -402,6 +402,12 @@
           # to hide audit messages from the interactive console
           kernel.printk=4
 
+    - path: /etc/sysctl.d/90-unprivileged-ports.conf
+      mode: 0644
+      contents:
+        inline: |
+          net.ipv4.ip_unprivileged_port_start=23
+
 # creating podman network for the reverse proxy
     - path: /etc/containers/systemd/users/1000/rproxy.network
       mode: 0644
