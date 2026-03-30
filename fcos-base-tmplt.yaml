@@ -414,10 +414,37 @@
       contents:
         inline: |
           [Network]
-          Subnet=10.255.0.0/24
-          Gateway=10.255.0.1
-          IPRange=10.255.0.128/25
+          Subnet=10.80.0.0/24
+          Gateway=10.80.0.1
+          IPRange=10.80.0.128/25
+          Internal=true
           NetworkName=rproxy
+
+    - path: /etc/containers/systemd/users/1000/gw_dockhand.network
+      mode: 0644
+      contents:
+        inline: |
+          [Network]
+          Subnet=10.80.200.4/30
+          NetworkName=gw_dockhand
+
+    - path: /etc/containers/systemd/users/1000/tailscale.network
+      mode: 0644
+      contents:
+        inline: |
+          [Network]
+          Subnet=10.80.100.0/24
+          IPRange=10.80.100.128/25
+          Internal=true
+          NetworkName=tailscale
+
+    - path: /etc/containers/systemd/users/1000/gw_tailscale.network
+      mode: 0644
+      contents:
+        inline: |
+          [Network]
+          Subnet=10.80.200.0/30
+          NetworkName=gw_tailscale
 
     - path: /etc/containers/systemd/users/1000/socket-proxy-dockhand.network
       mode: 0644
@@ -441,23 +468,20 @@
           Image=docker.io/tailscale/tailscale:stable
           ContainerName=tailscale
           AutoUpdate=registry
-          Network=host
 
           # Persist state across reboots
           Volume=tailscale:/var/lib/tailscale:Z
 
+          Network=tailscale.network
+          IP=10.80.100.10
+          Network=gw_tailscale.network
+
           # Configuration
           Environment=TS_STATE_DIR=/var/lib/tailscale
-          Environment=TS_USERSPACE=false
-          Environment=TS_DEBUG_FIREWALL_MODE=nftables
+          Environment=TS_USERSPACE=true
           Environment=TS_ENABLE_HEALTH_CHECK=true
-          Environment=TS_EXTRA_ARGS=--ssh
           Environment=TS_AUTH_ONCE=true
-
-          AddDevice=/dev/net/tun
-
-          AddCapability=CAP_NET_ADMIN
-          AddCapability=CAP_SYS_MODULE
+          Environment=TS_ROUTES=10.80.100.0/24
 
           # Heath check
           HealthCmd=wget -q --spider localhost:9002/healthz
@@ -540,6 +564,7 @@
           Volume=/var/mnt/volume-storage/dockhand/_data:/var/mnt/volume-storage/dockhand/_data:Z
           Network=rproxy.network
           Network=socket-proxy-dockhand.network
+          Network=gw_dockhand.network
 
           Environment=DATA_DIR=/var/mnt/volume-storage/dockhand/_data
 
