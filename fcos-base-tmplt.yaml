@@ -472,8 +472,7 @@
           # Persist state across reboots
           Volume=tailscale:/var/lib/tailscale:Z
 
-          Network=tailscale.network
-          IP=10.80.100.10
+          Network=tailscale.network:ip=10.80.100.10
           Network=gw_tailscale.network
 
           # Configuration
