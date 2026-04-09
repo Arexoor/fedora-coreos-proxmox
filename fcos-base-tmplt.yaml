@@ -304,38 +304,49 @@
             echo -n "[INFO]: Cloudinit: wrote ssh authorized keys file for user: ${NEWUSERNAME}... "
             ${YQ} ${CIPATH}/user-data 'ssh_authorized_keys[*]' > /var/home/${NEWUSERNAME}/.ssh/authorized_keys.d/ignition 2> /dev/null || { echo "[failed]"; exit 1; }
             echo "[done]"
-            # Network => ipv6: TODO
+            # Networking configuration
             netcards="$(${YQ} ${CIPATH}/network-config 'config[*].name' 2> /dev/null | wc -l)"
             nameservers="$(${YQ} ${CIPATH}/network-config "config[${netcards}].address[*]" 2> /dev/null | paste -s -d ";" -)"
             searchdomain="$(${YQ} ${CIPATH}/network-config "config[${netcards}].search[*]" 2> /dev/null | paste -s -d ";" -)"
             echo "[INFO]: Cloudinit: DNS Server=$nameservers - DNS Search=$searchdomain"
-            for (( i=O; i<${netcards}; i++ )); do
-              ipv4="" netmask="" gw="" macaddr="" # reset on each run
-              ipv4="$(${YQ} ${CIPATH}/network-config config[${i}].subnets[0].address 2> /dev/null)" || {
-                [[ -e /etc/NetworkManager/system-connections/net${i}.nmconnection ]]&& MUST_NETWORK_RELOAD=true
-                rm -f /etc/NetworkManager/system-connections/net${i}.nmconnection
-                continue # dhcp mode
-              }
-              netmask="$(${YQ} ${CIPATH}/network-config config[${i}].subnets[0].netmask 2> /dev/null)"
-              cidr="$(mask2cdr ${netmask})"
-              gw="$(${YQ} ${CIPATH}/network-config config[${i}].subnets[0].gateway 2> /dev/null)" || true # can be empty
+            for (( i=0; i<${netcards}; i++ )); do
+              ipv4_type="" ipv4="" netmask="" gw="" macaddr="" # reset on each run
+              ipv4_type="$(${YQ} ${CIPATH}/network-config config[${i}].subnets[0].type 2>/dev/null)" || true
+              ipv4="$(${YQ} ${CIPATH}/network-config config[${i}].subnets[0].address 2> /dev/null)" || true
+              netmask="$(${YQ} ${CIPATH}/network-config config[${i}].subnets[0].netmask 2> /dev/null)" || true
+              cidr="$(mask2cdr ${netmask})" || true
+              gw="$(${YQ} ${CIPATH}/network-config config[${i}].subnets[0].gateway 2> /dev/null)" || true
+
               macaddr="$(${YQ} ${CIPATH}/network-config config[${i}].mac_address 2> /dev/null)"
-              echo "[INFO]: Cloudinit: NET$i IPv4 Network: IP=${ipv4}/${netmask} - GW=${gw:-none} - MAC=${macaddr}"
+
+              ipv6_type="" ipv6_addr="" ipv6_gw=""
+              ipv6_type="$(${YQ} ${CIPATH}/network-config config[${i}].subnets[1].type 2>/dev/null)" || true
+              ipv6_addr="$(${YQ} ${CIPATH}/network-config config[${i}].subnets[1].address 2>/dev/null)" || true
+              ipv6_gw="$(${YQ} ${CIPATH}/network-config config[${i}].subnets[1].gateway 2>/dev/null)" || true
+
               rm -f /etc/NetworkManager/system-connections/default_connection.nmconnection # remove default connexion settings
               if [[ -e /etc/NetworkManager/system-connections/net${i}.nmconnection ]]
               then
-                [[ "x${ipv4}/${cidr}" != "x$(nmcli connection show net${i} 2> /dev/null | grep ^ipv4.addresses: | awk '{print $2}')" ]]&& {
-                  echo -n "[INFO]: Cloudinit: update Network config ipv4 for net${i}... "
-                  nmcli c modify net${i} ipv4.addresses "${ipv4}/${cidr}"
-                  MUST_NET_RECONFIG=true
-                  echo "[done]"
-                }
-                [[ "x${gw}" != "x$(nmcli connection show net${i} 2> /dev/null | grep ^ipv4.gateway: | awk '{print $2}')" ]] && {
-                  echo -n "[INFO]: Cloudinit: update Network config gateway for net${i}... "
-                  nmcli c modify net${i} ipv4.gateway "${gw}"
-                  MUST_NET_RECONFIG=true
-                  echo "[done]"
-                }
+                echo "[INFO]: Cloudinit: NET$i: MAC=${macaddr}"
+                if [[ "${ipv4_type}" == "static" ]];
+                then
+                  echo "[INFO]: Cloudinit: NET$i IPv4 Network: IP=${ipv4}/${netmask} - GW=${gw:-none}"
+                  [[ "x$(nmcli connection show net${i} 2>/dev/null | grep ^ipv4.method: | awk '{print $2}')" != "xmanual" ]] && {
+                    echo -n "[INFO]: Cloudinit: update Network config ipv4 for net${i}... "
+                    nmcli c modify net${i} ipv4.method manual
+                    nmcli c modify net${i} ipv4.addresses "${ipv4}/${cidr}"
+                    [[ -n "${gw}" ]] && nmcli c modify net${i} ipv4.gateway "${gw}"
+                    MUST_NET_RECONFIG=true
+                    echo "[done]"
+                  }
+                else
+                  [[ "x$(nmcli connection show net${i} 2>/dev/null | grep ^ipv4.method: | awk '{print $2}')" != "xauto" ]] && {
+                    echo "[INFO]: Cloudinit: update Network config IPv4 DHCP for net${i}... "
+                    nmcli c modify net${i} ipv4.method auto
+                    MUST_NET_RECONFIG=true
+                    echo "[done]"
+                  }
+                fi
                 [[ "x${searchdomain}" != "x$(nmcli connection show net${i} 2> /dev/null | grep ^ipv4.dns-search: | awk '{print $2}' | tr ',' ';')" ]]&& {
                   echo -n "[INFO]: Cloudinit: update Network config dns seach for net${i}... "
                   nmcli c modify net${i} ipv4.dns-search "$(echo ${searchdomain} | tr ";" ",")"
@@ -348,12 +359,56 @@
                   MUST_NET_RECONFIG=true
                   echo "[done]"
                 }
+                if [[ "${ipv6_type}" == "dhcp6" ]]; then
+                  [[ "x$(nmcli connection show net${i} 2>/dev/null | grep ^ipv6.method: | awk '{print $2}')" != "xdhcp" ]] && {
+                    echo -n "[INFO]: Cloudinit: update Network config IPv6 DHCP for net${i}... "
+                    nmcli c modify net${i} ipv6.method dhcp
+                    MUST_NET_RECONFIG=true
+                    echo "[done]"
+                  }
+                elif [[ "${ipv6_type}" == "static6" ]]; then
+                  echo "[INFO]: Cloudinit: NET$i IPv6 Static: IP=${ipv6_addr} - GW=${ipv6_gw:-none}"
+                  [[ "x$(nmcli connection show net${i} 2>/dev/null | grep ^ipv6.method: | awk '{print $2}')" != "xmanual" ]] && {
+                    echo -n "[INFO]: Cloudinit: update Network config IPv6 static for net${i}... "
+                    nmcli c modify net${i} ipv6.method manual
+                    nmcli c modify net${i} ipv6.addresses "${ipv6_addr}"
+                    [[ -n "${ipv6_gw}" ]] && nmcli c modify net${i} ipv6.gateway "${ipv6_gw}"
+                    MUST_NET_RECONFIG=true
+                    echo "[done]"
+                  }
+                else
+                  [[ "x$(nmcli connection show net${i} 2>/dev/null | grep ^ipv6.method: | awk '{print $2}')" != "xauto" ]] && {
+                    echo -n "[INFO]: Cloudinit: update Network config IPv6 SLAAC for net${i}... "
+                    nmcli c modify net${i} ipv6.method auto
+                    nmcli c modify net${i} ipv6.ip6-privacy 2                   # prefers the temporary ipv6
+                    nmcli c modify net${i} ipv6.addr-gen-mode stable-privacy    # stable ipv6 is randomly generated
+                    MUST_NET_RECONFIG=true
+                    echo "[done]"
+                  }
+                fi
               else
                 echo -n "[INFO]: Cloudinit: wrote NetworkManager config for net${i}... "
                 install --mode=0600 /dev/null /etc/NetworkManager/system-connections/net${i}.nmconnection &> /dev/null || { echo "[failed]"; exit 1; }
                 echo -e "[connection]\ntype=ethernet\nid=net${i}\n#interface-name=eth${i}\n" >> /etc/NetworkManager/system-connections/net${i}.nmconnection
                 echo -e "[ethernet]\nmac-address=${macaddr}\n" >> /etc/NetworkManager/system-connections/net${i}.nmconnection
-                echo -e "[ipv4]\nmethod=manual\naddresses=${ipv4}/${netmask}\ngateway=${gw}\ndns=${nameservers}\ndns-search=${searchdomain}" >> /etc/NetworkManager/system-connections/net${i}.nmconnection
+                if [[ "${ipv4_type}" == "static" ]]; then
+                  echo -e "[ipv4]\nmethod=manual\naddresses=${ipv4}/${netmask}" >> /etc/NetworkManager/system-connections/net${i}.nmconnection
+                  [[ -n "${gw}" ]] && echo -e "gateway=${gw}" >> /etc/NetworkManager/system-connections/net${i}.nmconnection
+                  echo -e "dns=${nameservers}\ndns-search=${searchdomain}" >> /etc/NetworkManager/system-connections/net${i}.nmconnection
+                else
+                  echo -e "[ipv4]\nmethod=auto\ndns=${nameservers}\ndns-search=${searchdomain}" >> /etc/NetworkManager/system-connections/net${i}.nmconnection
+                fi
+                echo -e "\n[ipv6]" >> /etc/NetworkManager/system-connections/net${i}.nmconnection
+                if [[ "${ipv6_type}" == "ipv6_slaac" ]]; then
+                  echo -e "\nmethod=auto\nip6-privacy=2\naddr-gen-mode=1" >> /etc/NetworkManager/system-connections/net${i}.nmconnection
+                elif [[ "${ipv6_type}" == "dhcp6" ]]; then
+                  echo -e "\nmethod=dhcp" >> /etc/NetworkManager/system-connections/net${i}.nmconnection
+                elif [[ "${ipv6_type}" == "static6" ]]; then
+                  echo -e "method=manual\naddresses=${ipv6_addr}" >> /etc/NetworkManager/system-connections/net${i}.nmconnection
+                  [[ -n "${ipv6_gw}" ]] && echo -e "gateway=${ipv6_gw}" >> /etc/NetworkManager/system-connections/net${i}.nmconnection
+                else
+                  echo -e "method=disabled" >> /etc/NetworkManager/system-connections/net${i}.nmconnection
+                fi
                 MUST_NET_RECONFIG=true
                 echo "[done]"
               fi
