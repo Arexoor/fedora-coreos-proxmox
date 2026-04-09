@@ -413,6 +413,14 @@
                 echo "[done]"
               fi
             done
+  
+            ${MUST_NET_RECONFIG:-false} && {
+              echo "[INFO]: Cloudinit: must reload network..."
+              nmcli connection reload
+              nmcli networking off
+              nmcli networking on
+              systemctl restart arexoor-motd.service
+            }
           fi
 
           ${MUST_NET_RECONFIG:-false}&& {
