@@ -7,7 +7,7 @@ Fedora CoreOS template for proxmox with cloudinit support
 Changed the branding
 Enabled rootless podman socket for user core
 Enabel lingering for user core
-Deploy tailscale container with ssh support
+Deploy tailscale container
 Deploy dockhand container with podman socket access
 Added virtiofs auto mounting
 Added ipv6 support

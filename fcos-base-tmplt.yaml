@@ -545,8 +545,6 @@
           Environment=TS_ENABLE_HEALTH_CHECK=true
           Environment=TS_AUTH_ONCE=true
           Environment=TS_ROUTES=10.80.100.0/24
-          Environment=TS_EXTRA_ARGS=--ssh
-          Environment=TS_DEST_IP=10.80.200.1
 
           # Heath check
           HealthCmd=wget -q --spider localhost:9002/healthz
