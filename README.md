@@ -10,6 +10,7 @@ Enabel lingering for user core
 Deploy tailscale container with ssh support
 Deploy dockhand container with podman socket access
 Added virtiofs auto mounting
+Added ipv6 support
 
 ## Permissions
 VirtioFS folder on the host need to be owned by user 1000:1000

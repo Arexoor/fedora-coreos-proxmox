@@ -413,7 +413,7 @@
                 echo "[done]"
               fi
             done
-  
+
             ${MUST_NET_RECONFIG:-false} && {
               echo "[INFO]: Cloudinit: must reload network..."
               nmcli connection reload
@@ -507,6 +507,7 @@
         inline: |
           [Network]
           Subnet=10.80.200.0/30
+          Gateway=10.80.200.1
           NetworkName=gw_tailscale
 
     - path: /etc/containers/systemd/users/1000/socket-proxy-dockhand.network
@@ -544,6 +545,8 @@
           Environment=TS_ENABLE_HEALTH_CHECK=true
           Environment=TS_AUTH_ONCE=true
           Environment=TS_ROUTES=10.80.100.0/24
+          Environment=TS_EXTRA_ARGS=--ssh
+          Environment=TS_DEST_IP=10.80.200.1
 
           # Heath check
           HealthCmd=wget -q --spider localhost:9002/healthz
