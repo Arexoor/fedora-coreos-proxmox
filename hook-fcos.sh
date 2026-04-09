@@ -142,36 +142,66 @@ then
 
     	echo -n "Fedora CoreOS: Generate yaml network block... "
     	netcards="$(qm cloudinit dump ${vmid} network | ${YQ} - 'config[*].name' 2> /dev/null | wc -l)"
-    	nameservers="$(qm cloudinit dump ${vmid} network | ${YQ} - "config[${netcards}].address[*]" | paste -s -d ";" -)"
-    	searchdomain="$(qm cloudinit dump ${vmid} network | ${YQ} - "config[${netcards}].search[*]" | paste -s -d ";" -)"
-    	for (( i=O; i<${netcards}; i++ ))
-    	do
-    		ipv4="" netmask="" gw="" macaddr="" # reset on each run
-    		ipv4="$(qm cloudinit dump ${vmid} network | ${YQ} - config[${i}].subnets[0].address 2> /dev/null)" || continue # dhcp
-    		netmask="$(qm cloudinit dump ${vmid} network | ${YQ} - config[${i}].subnets[0].netmask 2> /dev/null)"
-    		gw="$(qm cloudinit dump ${vmid} network | ${YQ} - config[${i}].subnets[0].gateway 2> /dev/null)" || true # can be empty
-    		macaddr="$(qm cloudinit dump ${vmid} network | ${YQ} - config[${i}].mac_address 2> /dev/null)"
-    		# ipv6: TODO
+        nameservers="$(qm cloudinit dump ${vmid} network | ${YQ} - "config[${netcards}].address[*]" | paste -s -d ";" -)"
+        searchdomain="$(qm cloudinit dump ${vmid} network | ${YQ} - "config[${netcards}].search[*]" | paste -s -d ";" -)"
+        for (( i=0; i<${netcards}; i++ ))
+        do
+            ipv4_type="" ipv4="" netmask="" gw="" macaddr="" # reset on each run
+            ipv6_type="" ipv6_addr="" ipv6_gw=""
 
-    		echo "    - path: /etc/NetworkManager/system-connections/net${i}.nmconnection" >> ${COREOS_FILES_PATH}/${vmid}.yaml
-    		echo "      mode: 0600" >> ${COREOS_FILES_PATH}/${vmid}.yaml
-    		echo "      overwrite: true" >> ${COREOS_FILES_PATH}/${vmid}.yaml
-    		echo "      contents:" >> ${COREOS_FILES_PATH}/${vmid}.yaml
-    		echo "        inline: |" >> ${COREOS_FILES_PATH}/${vmid}.yaml
-    		echo "          [connection]" >> ${COREOS_FILES_PATH}/${vmid}.yaml
-    		echo "          type=ethernet" >> ${COREOS_FILES_PATH}/${vmid}.yaml
-    		echo "          id=net${i}" >> ${COREOS_FILES_PATH}/${vmid}.yaml
-    		echo "          #interface-name=eth${i}\n" >> ${COREOS_FILES_PATH}/${vmid}.yaml
-    		echo -e "\n          [ethernet]" >> ${COREOS_FILES_PATH}/${vmid}.yaml
-    		echo "          mac-address=${macaddr}" >> ${COREOS_FILES_PATH}/${vmid}.yaml
-    		echo -e "\n          [ipv4]" >> ${COREOS_FILES_PATH}/${vmid}.yaml
-    		echo "          method=manual" >> ${COREOS_FILES_PATH}/${vmid}.yaml
-    		echo "          addresses=${ipv4}/${netmask}" >> ${COREOS_FILES_PATH}/${vmid}.yaml
-    		echo "          gateway=${gw}" >> ${COREOS_FILES_PATH}/${vmid}.yaml
-    		echo "          dns=${nameservers}" >> ${COREOS_FILES_PATH}/${vmid}.yaml
-    		echo -e "          dns-search=${searchdomain}\n" >> ${COREOS_FILES_PATH}/${vmid}.yaml
-    	done
-    	echo "[done]"
+            ipv4_type="$(qm cloudinit dump ${vmid} network | ${YQ} - config[${i}].subnets[0].type 2>/dev/null)" || true
+            ipv4="$(qm cloudinit dump ${vmid} network | ${YQ} - config[${i}].subnets[0].address 2>/dev/null)" || true
+            netmask="$(qm cloudinit dump ${vmid} network | ${YQ} - config[${i}].subnets[0].netmask 2>/dev/null)" || true
+            gw="$(qm cloudinit dump ${vmid} network | ${YQ} - config[${i}].subnets[0].gateway 2>/dev/null)" || true
+            macaddr="$(qm cloudinit dump ${vmid} network | ${YQ} - config[${i}].mac_address 2>/dev/null)"
+
+            ipv6_type="$(qm cloudinit dump ${vmid} network | ${YQ} - config[${i}].subnets[1].type 2>/dev/null)" || true
+            ipv6_addr="$(qm cloudinit dump ${vmid} network | ${YQ} - config[${i}].subnets[1].address 2>/dev/null)" || true
+            ipv6_gw="$(qm cloudinit dump ${vmid} network | ${YQ} - config[${i}].subnets[1].gateway 2>/dev/null)" || true
+
+            echo "    - path: /etc/NetworkManager/system-connections/net${i}.nmconnection" >> ${COREOS_FILES_PATH}/${vmid}.yaml
+            echo "      mode: 0600" >> ${COREOS_FILES_PATH}/${vmid}.yaml
+            echo "      overwrite: true" >> ${COREOS_FILES_PATH}/${vmid}.yaml
+            echo "      contents:" >> ${COREOS_FILES_PATH}/${vmid}.yaml
+            echo "        inline: |" >> ${COREOS_FILES_PATH}/${vmid}.yaml
+            echo "          [connection]" >> ${COREOS_FILES_PATH}/${vmid}.yaml
+            echo "          type=ethernet" >> ${COREOS_FILES_PATH}/${vmid}.yaml
+            echo "          id=net${i}" >> ${COREOS_FILES_PATH}/${vmid}.yaml
+            echo "          #interface-name=eth${i}" >> ${COREOS_FILES_PATH}/${vmid}.yaml
+            echo "" >> ${COREOS_FILES_PATH}/${vmid}.yaml
+            echo "          [ethernet]" >> ${COREOS_FILES_PATH}/${vmid}.yaml
+            echo "          mac-address=${macaddr}" >> ${COREOS_FILES_PATH}/${vmid}.yaml
+            echo "" >> ${COREOS_FILES_PATH}/${vmid}.yaml
+            echo "          [ipv4]" >> ${COREOS_FILES_PATH}/${vmid}.yaml
+            if [[ "${ipv4_type}" == "static" ]]; then
+                echo "          method=manual" >> ${COREOS_FILES_PATH}/${vmid}.yaml
+                echo "          addresses=${ipv4}/${netmask}" >> ${COREOS_FILES_PATH}/${vmid}.yaml
+                [[ -n "${gw}" ]] && echo "          gateway=${gw}" >> ${COREOS_FILES_PATH}/${vmid}.yaml
+                echo "          dns=${nameservers}" >> ${COREOS_FILES_PATH}/${vmid}.yaml
+                echo "          dns-search=${searchdomain}" >> ${COREOS_FILES_PATH}/${vmid}.yaml
+            else
+                echo "          method=auto" >> ${COREOS_FILES_PATH}/${vmid}.yaml
+                echo "          dns=${nameservers}" >> ${COREOS_FILES_PATH}/${vmid}.yaml
+                echo "          dns-search=${searchdomain}" >> ${COREOS_FILES_PATH}/${vmid}.yaml
+            fi
+            echo "" >> ${COREOS_FILES_PATH}/${vmid}.yaml
+            echo "          [ipv6]" >> ${COREOS_FILES_PATH}/${vmid}.yaml
+            if [[ "${ipv6_type}" == "ipv6_slaac" ]]; then
+                echo "          method=auto" >> ${COREOS_FILES_PATH}/${vmid}.yaml
+                echo "          ip6-privacy=2" >> ${COREOS_FILES_PATH}/${vmid}.yaml
+                echo "          addr-gen-mode=1" >> ${COREOS_FILES_PATH}/${vmid}.yaml
+            elif [[ "${ipv6_type}" == "dhcp6" ]]; then
+                echo "          method=dhcp" >> ${COREOS_FILES_PATH}/${vmid}.yaml
+            elif [[ "${ipv6_type}" == "static6" ]]; then
+                echo "          method=manual" >> ${COREOS_FILES_PATH}/${vmid}.yaml
+                echo "          addresses=${ipv6_addr}" >> ${COREOS_FILES_PATH}/${vmid}.yaml
+                [[ -n "${ipv6_gw}" ]] && echo "          gateway=${ipv6_gw}" >> ${COREOS_FILES_PATH}/${vmid}.yaml
+            else
+                echo "          method=disabled" >> ${COREOS_FILES_PATH}/${vmid}.yaml
+            fi
+            echo "" >> ${COREOS_FILES_PATH}/${vmid}.yaml
+        done
+        echo "[done]"
 
     	[[ -e "${COREOS_TMPLT}" ]]&& {
     		echo -n "Fedora CoreOS: Generate other block based on template... "
