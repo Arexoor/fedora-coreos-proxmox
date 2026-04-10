@@ -471,6 +471,13 @@
         inline: |
           net.ipv4.ip_unprivileged_port_start=23
 
+    - path: /etc/sysctl.d/91-ipv6-privacy.conf
+      mode: 0644
+      contents:
+        inline: |
+          net.ipv6.conf.all.temp_prefered_lft = 1800
+          net.ipv6.conf.all.temp_valid_lft = 3600
+
 # creating podman network for the reverse proxy
     - path: /etc/containers/systemd/users/1000/rproxy.network
       mode: 0644
