@@ -333,6 +333,7 @@
                   echo "[INFO]: Cloudinit: NET$i IPv4 Network: IP=${ipv4}/${netmask} - GW=${gw:-none}"
                   [[ "x$(nmcli connection show net${i} 2>/dev/null | grep ^ipv4.method: | awk '{print $2}')" != "xmanual" ]] && {
                     echo -n "[INFO]: Cloudinit: update Network config ipv4 for net${i}... "
+                    nmcli c modify net${i} ipv4.addresses "" ipv4.gateway ""
                     nmcli c modify net${i} ipv4.addresses "${ipv4}/${cidr}"
                     nmcli c modify net${i} ipv4.method manual
                     [[ -n "${gw}" ]] && nmcli c modify net${i} ipv4.gateway "${gw}"
@@ -342,6 +343,7 @@
                 else
                   [[ "x$(nmcli connection show net${i} 2>/dev/null | grep ^ipv4.method: | awk '{print $2}')" != "xauto" ]] && {
                     echo "[INFO]: Cloudinit: update Network config IPv4 DHCP for net${i}... "
+                    nmcli c modify net${i} ipv4.addresses "" ipv4.gateway ""
                     nmcli c modify net${i} ipv4.method auto
                     MUST_NET_RECONFIG=true
                     echo "[done]"
@@ -362,6 +364,7 @@
                 if [[ "${ipv6_type}" == "dhcp6" ]]; then
                   [[ "x$(nmcli connection show net${i} 2>/dev/null | grep ^ipv6.method: | awk '{print $2}')" != "xdhcp" ]] && {
                     echo -n "[INFO]: Cloudinit: update Network config IPv6 DHCP for net${i}... "
+                    mcli c modify net${i} ipv6.addresses "" ipv6.gateway "" ipv6.ip6-privacy -1 ipv6.addr-gen-mode default
                     nmcli c modify net${i} ipv6.method dhcp
                     MUST_NET_RECONFIG=true
                     echo "[done]"
@@ -370,6 +373,7 @@
                   echo "[INFO]: Cloudinit: NET$i IPv6 Static: IP=${ipv6_addr} - GW=${ipv6_gw:-none}"
                   [[ "x$(nmcli connection show net${i} 2>/dev/null | grep ^ipv6.method: | awk '{print $2}')" != "xmanual" ]] && {
                     echo -n "[INFO]: Cloudinit: update Network config IPv6 static for net${i}... "
+                    mcli c modify net${i} ipv6.addresses "" ipv6.gateway "" ipv6.ip6-privacy -1 ipv6.addr-gen-mode default
                     nmcli c modify net${i} ipv6.addresses "${ipv6_addr}"
                     nmcli c modify net${i} ipv6.method manual
                     [[ -n "${ipv6_gw}" ]] && nmcli c modify net${i} ipv6.gateway "${ipv6_gw}"
@@ -379,6 +383,7 @@
                 else
                   [[ "x$(nmcli connection show net${i} 2>/dev/null | grep ^ipv6.method: | awk '{print $2}')" != "xauto" ]] && {
                     echo -n "[INFO]: Cloudinit: update Network config IPv6 SLAAC for net${i}... "
+                    nmcli c modify net${i} ipv6.addresses "" ipv6.gateway ""
                     nmcli c modify net${i} ipv6.method auto
                     nmcli c modify net${i} ipv6.ip6-privacy 2                   # prefers the temporary ipv6
                     nmcli c modify net${i} ipv6.addr-gen-mode stable-privacy    # stable ipv6 is randomly generated
