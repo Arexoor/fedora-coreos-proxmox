@@ -475,8 +475,8 @@
       mode: 0644
       contents:
         inline: |
-          net.ipv6.conf.all.temp_prefered_lft = 1800
-          net.ipv6.conf.all.temp_valid_lft = 3600
+          net.ipv6.conf.default.temp_prefered_lft = 1800
+          net.ipv6.conf.default.temp_valid_lft = 3600
 
 # creating podman network for the reverse proxy
     - path: /etc/containers/systemd/users/1000/rproxy.network
