@@ -333,8 +333,8 @@
                   echo "[INFO]: Cloudinit: NET$i IPv4 Network: IP=${ipv4}/${netmask} - GW=${gw:-none}"
                   [[ "x$(nmcli connection show net${i} 2>/dev/null | grep ^ipv4.method: | awk '{print $2}')" != "xmanual" ]] && {
                     echo -n "[INFO]: Cloudinit: update Network config ipv4 for net${i}... "
-                    nmcli c modify net${i} ipv4.method manual
                     nmcli c modify net${i} ipv4.addresses "${ipv4}/${cidr}"
+                    nmcli c modify net${i} ipv4.method manual
                     [[ -n "${gw}" ]] && nmcli c modify net${i} ipv4.gateway "${gw}"
                     MUST_NET_RECONFIG=true
                     echo "[done]"
@@ -370,8 +370,8 @@
                   echo "[INFO]: Cloudinit: NET$i IPv6 Static: IP=${ipv6_addr} - GW=${ipv6_gw:-none}"
                   [[ "x$(nmcli connection show net${i} 2>/dev/null | grep ^ipv6.method: | awk '{print $2}')" != "xmanual" ]] && {
                     echo -n "[INFO]: Cloudinit: update Network config IPv6 static for net${i}... "
-                    nmcli c modify net${i} ipv6.method manual
                     nmcli c modify net${i} ipv6.addresses "${ipv6_addr}"
+                    nmcli c modify net${i} ipv6.method manual
                     [[ -n "${ipv6_gw}" ]] && nmcli c modify net${i} ipv6.gateway "${ipv6_gw}"
                     MUST_NET_RECONFIG=true
                     echo "[done]"
