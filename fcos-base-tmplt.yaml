@@ -560,7 +560,7 @@
 
           # Heath check
           HealthCmd=wget -q --spider localhost:9002/healthz
-          HealthInterval=30s
+          HealthInterval=1m
           HealthTimeout=5s
           HealthRetries=3
           HealthStartPeriod=10s
