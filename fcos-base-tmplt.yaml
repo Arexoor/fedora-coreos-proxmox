@@ -155,7 +155,6 @@
               where="$(${YQ} ${vendor_data} "mounts[${i}].where" 2>/dev/null)"     || continue
               type="$(${YQ} ${vendor_data} "mounts[${i}].type" 2>/dev/null)"       || continue
               options="$(${YQ} ${vendor_data} "mounts[${i}].options" 2>/dev/null)" || options=""
-              after_network="$(${YQ} ${vendor_data} "mounts[${i}].after_network" 2>/dev/null)" || after_network="false"
 
               unit_file="$(systemd-escape --path --suffix=mount "${where}")"
               local unit_path="/etc/systemd/system/${unit_file}"
@@ -167,10 +166,9 @@
               local unit_content="${MANAGED_MARKER}
           [Unit]
           Description=Mount VirtioFS ${name} directory"
-              [[ "${after_network,,}" == "true" ]] && \
-                unit_content+="
-          After=network-online.target
-          Wants=network-online.target"
+              unit_content+="
+          After=sysinit.target
+          Before=multi-user.target"
               unit_content+="
 
           [Mount]
@@ -626,7 +624,7 @@
           [Unit]
           Description=dockhand
           After=network-online.target var-mnt-volume\x2dstorage.mount
-          Wants=network-online.target var-mnt-volume\x2dstorage.mount
+          Requires=network-online.target var-mnt-volume\x2dstorage.mount
           After=socket-proxy-dockhand.container
           Requires=socket-proxy-dockhand.container
 

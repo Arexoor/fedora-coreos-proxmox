@@ -77,7 +77,6 @@ then
             echo "     what: ${tag}"            >> "${SNIPPETS_FILES_PATH}/${vmid}-vendor-data.yaml"
             echo "     where: ${mountpoint}"    >> "${SNIPPETS_FILES_PATH}/${vmid}-vendor-data.yaml"
             echo "     options: rw,relatime"    >> "${SNIPPETS_FILES_PATH}/${vmid}-vendor-data.yaml"
-            echo "     after_network: true"     >> "${SNIPPETS_FILES_PATH}/${vmid}-vendor-data.yaml"
         done
 
         new_hash="$(md5sum "${SNIPPETS_FILES_PATH}/${vmid}-vendor-data.yaml" | awk '{print $1}')"
