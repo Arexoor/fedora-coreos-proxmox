@@ -165,8 +165,10 @@
               # Build unit content
               local unit_content="${MANAGED_MARKER}
           [Unit]
-          Description=Mount VirtioFS ${name} directory"
+          Description=Mount VirtioFS ${name} directory
+          DefaultDependencies=no"
               unit_content+="
+
           After=sysinit.target
           Before=multi-user.target"
               unit_content+="
@@ -623,8 +625,8 @@
         inline: |
           [Unit]
           Description=dockhand
-          After=network-online.target var-mnt-volume\x2dstorage.mount
-          Requires=network-online.target var-mnt-volume\x2dstorage.mount
+          After=default.target var-mnt-volume\x2dstorage.mount
+          Requires=default.target var-mnt-volume\x2dstorage.mount
           After=socket-proxy-dockhand.container
           Requires=socket-proxy-dockhand.container
 
