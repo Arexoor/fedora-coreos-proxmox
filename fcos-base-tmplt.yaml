@@ -725,6 +725,12 @@
         name: core
       group:
         name: core
+    - path: /var/home/core/.config/systemd/user/default.target.wants/podman-restart.service
+      target: /usr/lib/systemd/user/podman-restart.service
+      user:
+        name: core
+      group:
+        name: core
 
 # arexoor-motd.service
 systemd:
