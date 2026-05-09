@@ -489,27 +489,19 @@
       contents:
         inline: |
           [Network]
-          Subnet=10.80.0.0/24
-          Gateway=10.80.0.1
-          IPRange=10.80.0.128/25
+          Subnet=10.90.0.0/24
+          Gateway=10.90.0.1
+          IPRange=10.90.0.128/25
           Internal=true
           NetworkName=rproxy
-
-    - path: /etc/containers/systemd/users/1000/gw_dockhand.network
-      mode: 0644
-      contents:
-        inline: |
-          [Network]
-          Subnet=10.80.200.4/30
-          NetworkName=gw_dockhand
 
     - path: /etc/containers/systemd/users/1000/tailscale.network
       mode: 0644
       contents:
         inline: |
           [Network]
-          Subnet=10.80.100.0/24
-          IPRange=10.80.100.128/25
+          Subnet=10.90.100.0/24
+          IPRange=10.90.100.128/25
           Internal=true
           NetworkName=tailscale
 
@@ -518,17 +510,9 @@
       contents:
         inline: |
           [Network]
-          Subnet=10.80.200.0/30
-          Gateway=10.80.200.1
+          Subnet=10.90.200.0/30
+          Gateway=10.90.200.1
           NetworkName=gw_tailscale
-
-    - path: /etc/containers/systemd/users/1000/socket-proxy-dockhand.network
-      mode: 0644
-      contents:
-        inline: |
-          [Network]
-          NetworkName=socket-proxy-dockhand
-          Internal=true
 
 # adding tailscale Quadlet
     - path: /etc/containers/systemd/users/1000/tailscale.container
@@ -548,15 +532,24 @@
           # Persist state across reboots
           Volume=tailscale:/var/lib/tailscale:Z
 
-          Network=tailscale.network:ip=10.80.100.10
+          Network=tailscale.network:ip=10.90.100.10
           Network=gw_tailscale.network
+
+          AddDevice=/dev/net/tun
+
+          AddCapability=NET_ADMIN
+          AddCapability=SYS_MODULE
+
+          Sysctl=net.ipv4.ip_forward=1
+          Sysctl=net.ipv6.conf.all.forwarding=1
 
           # Configuration
           Environment=TS_STATE_DIR=/var/lib/tailscale
-          Environment=TS_USERSPACE=true
+          Environment=TS_USERSPACE=false
           Environment=TS_ENABLE_HEALTH_CHECK=true
           Environment=TS_AUTH_ONCE=true
-          Environment=TS_ROUTES=10.80.100.0/24
+          Environment=TS_ROUTES=10.90.100.0/24
+          Environment=TS_EXTRA_ARGS=--advertise-exit-node --accept-routes
 
           # Heath check
           HealthCmd=wget -q --spider localhost:9002/healthz
@@ -572,95 +565,47 @@
           [Install]
           WantedBy=default.target
 
-    - path: /etc/containers/systemd/users/1000/socket-proxy-dockhand.container
+# adding hawser Quadlet
+    - path: /etc/containers/systemd/users/1000/hawser.container
       mode: 0644
       contents:
         inline: |
           [Unit]
-          Description=socket-proxy-dockhand
-          After=network-online.target
-          Wants=network-online.target
+          Description=hawser
+          After=default.target
+          Requires=default.target
+          After=socket-proxy-hawser.container
+          Requires=socket-proxy-hawser.container
 
           [Container]
-          Image=ghcr.io/tecnativa/docker-socket-proxy:latest
-          ContainerName=socket-proxy-dockhand
+          Image=ghcr.io/finsys/hawser:latest
+          ContainerName=hawser
           AutoUpdate=registry
 
           # Persist state across reboots
-          Volume=/run/user/1000/podman/podman.sock:/var/run/docker.sock:z
-          Network=socket-proxy-dockhand.network
+          Volume=/var/home/core/.local/share/containers/storage/volumes/hawser/_data:/var/home/core/.local/share/containers/storage/volumes/hawser/_data:Z
+          Network=tailscale.network:ip=10.90.100.20
 
           # Security permissions
           SecurityLabelType=container_runtime_t
 
-          # Required for Dockhand core functionality
-          Environment=CONTAINERS=1
-          Environment=IMAGES=1
-          Environment=NETWORKS=1
-          Environment=VOLUMES=1
-          Environment=EVENTS=1
-          Environment=POST=1
-          Environment=DELETE=1
-          # Required for dashboard host info and disk usage
-          Environment=INFO=1
-          Environment=SYSTEM=1
-          # Required for vulnerability scanning
-          Environment=ALLOW_START=1
-          Environment=ALLOW_STOP=1
-          Environment=ALLOW_RESTARTS=1
-          # Optional: enable for terminal access
-          Environment=EXEC=1
+          Environment=DATA_DIR=/var/home/core/.local/share/containers/storage/volumes/hawser/_data
 
           [Service]
           Restart=always
           TimeoutStartSec=300
+          ExecStartPre=mkdir -p /var/home/core/.local/share/containers/storage/volumes/hawser/_data
 
           [Install]
           WantedBy=default.target
 
-# adding dockhand Quadlet
-    - path: /etc/containers/systemd/users/1000/dockhand.container
-      mode: 0644
-      contents:
-        inline: |
-          [Unit]
-          Description=dockhand
-          After=default.target var-mnt-volume\x2dstorage.mount
-          Requires=default.target var-mnt-volume\x2dstorage.mount
-          After=socket-proxy-dockhand.container
-          Requires=socket-proxy-dockhand.container
-
-          [Container]
-          Image=docker.io/fnsys/dockhand:latest
-          ContainerName=dockhand
-          AutoUpdate=registry
-
-          # Persist state across reboots
-          Volume=/var/mnt/volume-storage/dockhand/_data:/var/mnt/volume-storage/dockhand/_data:Z
-          Network=rproxy.network
-          Network=socket-proxy-dockhand.network
-          Network=gw_dockhand.network
-
-          Environment=DATA_DIR=/var/mnt/volume-storage/dockhand/_data
-
-          # Configuration
-          PublishPort=3000:3000
-
-          [Service]
-          Restart=always
-          TimeoutStartSec=300
-          ExecStartPre=mkdir -p /var/mnt/volume-storage/dockhand/_data
-
-          [Install]
-          WantedBy=default.target
-
-    - path: /etc/containers/containers.conf
-      mode: 0644
-      contents:
-        inline: |
-          [engine]
-          # volume path override
-          volume_path = "/var/mnt/volume-storage"
+    # - path: /etc/containers/containers.conf
+    #   mode: 0644
+    #   contents:
+    #     inline: |
+    #       [engine]
+    #       # volume path override
+    #       volume_path = "/var/mnt/volume-storage"
 
     - path: /var/home/core/.config/containers/containers.conf
       mode: 0644

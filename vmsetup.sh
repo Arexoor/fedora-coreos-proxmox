@@ -11,7 +11,7 @@ export LANG=C
 export LC_ALL=C
 
 # template vm vars
-TEMPLATE_VMID="1000"
+TEMPLATE_VMID="1100"
 TEMPLATE_VMSTORAGE="optane"
 SNIPPET_STORAGE="local"
 VMDISK_OPTIONS=",discard=on"
