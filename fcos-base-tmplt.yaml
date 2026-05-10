@@ -504,27 +504,25 @@
           NetworkName=rproxy
 
     # Bridge-Interface Konfiguration
-    - path: /etc/systemd/network/10-br-tailscale.netdev
-      mode: 0644
+    - path: /etc/NetworkManager/system-connections/br-tailscale.nmconnection
+      mode: 0600
       contents:
         inline: |
-          [NetDev]
-          Name=br-tailscale
-          Kind=bridge
+          [connection]
+          id=br-tailscale
+          type=bridge
+          interface-name=br-tailscale
+          autoconnect=true
 
-    - path: /etc/systemd/network/20-br-tailscale.network
-      mode: 0644
-      contents:
-        inline: |
-          [Match]
-          Name=br-tailscale
+          [bridge]
+          stp=false
 
-          [Network]
-          Address=10.90.100.1/24
-          IPForward=yes
+          [ipv4]
+          method=manual
+          address1=10.90.100.1/24
 
-          [Bridge]
-          STP=no
+          [ipv6]
+          method=disabled
 
     - path: /etc/containers/systemd/users/1000/tailscale.network
       mode: 0644
