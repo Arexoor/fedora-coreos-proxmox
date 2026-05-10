@@ -674,25 +674,25 @@ systemd:
         WantedBy=multi-user.target
 
     - name: rpm-ostree-install-tailscale.service
-          enabled: true
-          contents: |
-            [Unit]
-            Description=Layer tailscale with rpm-ostree
-            Wants=network-online.target
-            After=network-online.target
-            Before=zincati.service
-            ConditionPathExists=!/var/lib/%N.stamp
+      enabled: true
+      contents: |
+        [Unit]
+        Description=Layer tailscale with rpm-ostree
+        Wants=network-online.target
+        After=network-online.target
+        Before=zincati.service
+        ConditionPathExists=!/var/lib/%N.stamp
 
-            [Service]
-            Type=oneshot
-            RemainAfterExit=yes
-            ExecStart=/usr/bin/rpm-ostree install --apply-live --allow-inactive tailscale
-            ExecStart=/bin/touch /var/lib/%N.stamp
-            ExecStart=/usr/bin/systemctl enable tailscaled
-            ExecStart=/usr/bin/systemctl start tailscaled
+        [Service]
+        Type=oneshot
+        RemainAfterExit=yes
+        ExecStart=/usr/bin/rpm-ostree install --apply-live --allow-inactive tailscale
+        ExecStart=/bin/touch /var/lib/%N.stamp
+        ExecStart=/usr/bin/systemctl enable tailscaled
+        ExecStart=/usr/bin/systemctl start tailscaled
 
-            [Install]
-            WantedBy=multi-user.target
+        [Install]
+        WantedBy=multi-user.target
 
     - name: arexoor-motd.service
       enabled: true
