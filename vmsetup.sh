@@ -77,7 +77,7 @@ esac
 
 # create a new VM
 echo "Create fedora coreos vm ${VMID}"
-qm create ${TEMPLATE_VMID} --name fcos-tmplt
+qm create ${TEMPLATE_VMID} --name fcos-tmplt-edge
 qm set ${TEMPLATE_VMID} --memory 4096 \
 			--cpu host \
 			--cores 4 \
