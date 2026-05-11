@@ -567,7 +567,7 @@
         name: core
       contents:
         inline: |
-          TOKEN=lUv6h2Nlqc8hfBVnONV4tuGZuY0cQ$usynLadF29tWSmnW7L8Nbq38BWH#bAQJWh0gPc@AhUmycIc!qB5AmAzxyPo%noEyY4ONCKfs@RbR&5T1a*FE!1nAXa@VaZbvmA
+          TOKEN=private_token
 
     # - path: /etc/containers/containers.conf
     #   mode: 0644
