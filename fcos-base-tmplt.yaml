@@ -550,8 +550,9 @@
 
           Environment=STACKS_DIR=/var/home/core/.local/share/containers/storage/volumes/hawser/_data
           Environment=PORT=2376
-          Environment=TLS_CERT=/certs/server.crt
-          Environment=TLS_KEY=/certs/server.key
+          Environment=DOCKHAND_SERVER_URL=wss://dockhand.arexoor.dev/api/hawser/connect
+          Environment=AGENT_NAME=edge
+          EnvironmentFile=/var/home/core/hawser.env
 
           [Service]
           Restart=always
@@ -560,6 +561,16 @@
 
           [Install]
           WantedBy=default.target
+
+    - path: /var/home/core/hawser.env
+      mode: 0400
+      user:
+        name: core
+      group:
+        name: core
+      contents:
+        inline: |
+          TOKEN=lUv6h2Nlqc8hfBVnONV4tuGZuY0cQ$usynLadF29tWSmnW7L8Nbq38BWH#bAQJWh0gPc@AhUmycIc!qB5AmAzxyPo%noEyY4ONCKfs@RbR&5T1a*FE!1nAXa@VaZbvmA
 
     # - path: /etc/containers/containers.conf
     #   mode: 0644
@@ -679,7 +690,7 @@ systemd:
         [Service]
         Type=oneshot
         RemainAfterExit=yes
-        ExecStart=/usr/bin/rpm-ostree install --apply-live --allow-inactive tailscale
+        ExecStart=/usr/bin/rpm-ostree install --reboot --idempotent --allow-inactive tailscale
         ExecStart=/usr/bin/systemctl enable tailscaled
         ExecStart=/usr/bin/systemctl start tailscaled
         ExecStart=/bin/touch /var/lib/%N.stamp
