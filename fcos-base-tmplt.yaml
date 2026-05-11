@@ -778,15 +778,15 @@ systemd:
       contents: |
         [Unit]
         Description=arexoor Setup Qemu Guest Agent
-        After=network-online.target
-        Require=network-online.target
+        After=network-online.target rpm-ostree-install-tailscale.service
+        Require=network-online.target rpm-ostree-install-tailscale.service
         ConditionKernelCommandLine=ignition.platform.id=qemu
         ConditionPathExists=!/var/lib/qemu-guest-agent.stamp
 
         [Service]
         Type=oneshot
         RemainAfterExit=yes
-        ExecStart=/bin/rpm-ostree install qemu-guest-agent
+        ExecStart=/bin/rpm-ostree install --reboot --idempotent --allow-inactive qemu-guest-agent
         ExecStart=/bin/touch /var/lib/qemu-guest-agent.stamp
         ExecStart=/bin/systemctl --no-block reboot
 
