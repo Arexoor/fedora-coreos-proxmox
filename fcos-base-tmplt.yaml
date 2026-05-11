@@ -731,7 +731,7 @@ systemd:
         [Service]
         Type=oneshot
         RemainAfterExit=yes
-        ExecStart=/usr/bin/rpm-ostree install --apply-live --allow-inactive tailscale
+        ExecStart=/usr/bin/rpm-ostree install --reboot --idempotent --allow-inactive tailscale
         ExecStart=/usr/bin/systemctl enable tailscaled
         ExecStart=/usr/bin/systemctl start tailscaled
         ExecStart=/bin/touch /var/lib/%N.stamp
