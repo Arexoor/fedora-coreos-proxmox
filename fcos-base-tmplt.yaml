@@ -542,14 +542,11 @@
           # Persist state across reboots
           Volume=/var/home/core/.local/share/containers/storage/volumes/hawser/_data:/var/home/core/.local/share/containers/storage/volumes/hawser/_data:Z
           Volume=/run/user/1000/podman/podman.sock:/var/run/docker.sock:z
-          Volume=hawser-certs:/certs:ro
-          PublishPort=10.100.100.20:2376:2376
 
           # Security permissions
           SecurityLabelType=container_runtime_t
 
           Environment=STACKS_DIR=/var/home/core/.local/share/containers/storage/volumes/hawser/_data
-          Environment=PORT=2376
           Environment=DOCKHAND_SERVER_URL=wss://dockhand.arexoor.dev/api/hawser/connect
           Environment=AGENT_NAME=edge
           EnvironmentFile=/var/home/core/hawser.env
