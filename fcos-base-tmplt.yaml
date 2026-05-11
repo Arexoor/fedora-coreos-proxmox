@@ -642,27 +642,6 @@
 # arexoor-motd.service
 systemd:
   units:
-    - name: tailscale-connect.service
-      enabled: true
-      contents: |
-        [Unit]
-        Description=Tailscale Connect (Exit Node + Subnet Router + SSH)
-        After=tailscaled.service network-online.target
-        Wants=network-online.target
-        Requires=tailscaled.service
-
-        [Service]
-        Type=oneshot
-        RemainAfterExit=yes
-        ExecStart=/usr/bin/tailscale set \
-          --advertise-exit-node \
-          --advertise-routes=10.100.100.20/32 \
-          --accept-routes \
-          --ssh
-
-        [Install]
-        WantedBy=multi-user.target
-
     - name: rpm-ostree-install-tailscale.service
       enabled: true
       contents: |
@@ -680,6 +659,11 @@ systemd:
         ExecStart=/bin/touch /var/lib/%N.stamp
         ExecStart=/usr/bin/systemctl enable tailscaled
         ExecStart=/usr/bin/systemctl start tailscaled
+        ExecStart=/usr/bin/tailscale set \
+          --advertise-exit-node \
+          --advertise-routes=10.100.100.20/32 \
+          --accept-routes \
+          --ssh
 
         [Install]
         WantedBy=multi-user.target
