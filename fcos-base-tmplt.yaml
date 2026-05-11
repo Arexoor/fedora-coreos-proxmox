@@ -519,21 +519,10 @@
 
           [ipv4]
           method=manual
-          address1=10.90.100.1/24
+          address1=10.100.100.20/32
 
           [ipv6]
           method=disabled
-
-    - path: /etc/containers/systemd/users/1000/tailscale.network
-      mode: 0644
-      contents:
-        inline: |
-          [Network]
-          Driver=ipvlan
-          Options=parent=br-tailscale
-          Options=mode=l2
-          Subnet=10.90.100.1/24
-          IPRange=10.90.100.10/24
 
 # adding hawser Quadlet
     - path: /etc/containers/systemd/users/1000/hawser.container
@@ -544,8 +533,6 @@
           Description=hawser
           After=default.target
           Requires=default.target
-          After=socket-proxy-hawser.container
-          Requires=socket-proxy-hawser.container
 
           [Container]
           Image=ghcr.io/finsys/hawser:latest
@@ -554,12 +541,17 @@
 
           # Persist state across reboots
           Volume=/var/home/core/.local/share/containers/storage/volumes/hawser/_data:/var/home/core/.local/share/containers/storage/volumes/hawser/_data:Z
-          Network=tailscale.network:ip=10.90.100.20
+          Volume=/run/user/1000/podman/podman.sock:/var/run/docker.sock:z
+          Volume=hawser-certs:/certs:ro
+          PublishPort=10.100.100.20:2376:2376
 
           # Security permissions
           SecurityLabelType=container_runtime_t
 
-          Environment=DATA_DIR=/var/home/core/.local/share/containers/storage/volumes/hawser/_data
+          Environment=STACKS_DIR=/var/home/core/.local/share/containers/storage/volumes/hawser/_data
+          Environment=PORT=2376
+          Environment=TLS_CERT=/certs/server.crt
+          Environment=TLS_KEY=/certs/server.key
 
           [Service]
           Restart=always
@@ -664,7 +656,7 @@ systemd:
         RemainAfterExit=yes
         ExecStart=/usr/bin/tailscale set \
           --advertise-exit-node \
-          --advertise-routes=10.90.100.0/24 \
+          --advertise-routes=10.100.100.20/32 \
           --accept-routes \
           --ssh
 
