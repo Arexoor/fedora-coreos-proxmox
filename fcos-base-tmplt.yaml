@@ -711,7 +711,6 @@ systemd:
         StartLimitIntervalSec=0
         ExecStartPre=/bin/sh -c 'until [ -x /usr/bin/tailscale ] && /usr/bin/tailscale status >/dev/null 2>&1; do sleep 2; done'
         ExecStart=/usr/bin/tailscale set \
-          --advertise-exit-node \
           --advertise-routes=10.100.100.10/32 \
           --accept-routes \
           --ssh
