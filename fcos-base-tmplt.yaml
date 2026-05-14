@@ -522,7 +522,7 @@
           Environment=TS_USERSPACE=true
           Environment=TS_ENABLE_HEALTH_CHECK=true
           Environment=TS_AUTH_ONCE=true
-          Environment=TS_EXTRA_ARGS=--advertise-exit-node --advertise-tags=tag:server
+          Environment=TS_EXTRA_ARGS=--advertise-tags=tag:server
           Environment=TS_SOCKET=/var/run/tailscale/tailscaled.sock
           Environment=TS_HOSTNAME=CoreOS-central-gen2
 
