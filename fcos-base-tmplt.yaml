@@ -503,26 +503,50 @@
           Internal=true
           NetworkName=rproxy
 
-    # Bridge-Interface Konfiguration
-    - path: /etc/NetworkManager/system-connections/br-tailscale.nmconnection
-      mode: 0600
+# adding tailscale Quadlet
+    - path: /etc/containers/systemd/users/1000/tailscale.container
+      mode: 0644
       contents:
         inline: |
-          [connection]
-          id=br-tailscale
-          type=bridge
-          interface-name=br-tailscale
-          autoconnect=true
+          [Unit]
+          Description=Tailscale VPN
+          After=network-online.target
+          Wants=network-online.target
 
-          [bridge]
-          stp=false
+          [Container]
+          Image=docker.io/tailscale/tailscale:stable
+          ContainerName=tailscale
+          HostName=tailscale
+          AutoUpdate=registry
 
-          [ipv4]
-          method=manual
-          address1=10.100.100.20/32
+          # Persist state across reboots
+          Volume=tailscale-state:/var/lib/tailscale:Z
+          Volume=tailscale-socket:/var/run/tailscale:z
 
-          [ipv6]
-          method=disabled
+          Network=host
+
+          # Configuration
+          Environment=TS_STATE_DIR=/var/lib/tailscale
+          Environment=TS_USERSPACE=true
+          Environment=TS_ENABLE_HEALTH_CHECK=true
+          Environment=TS_AUTH_ONCE=true
+          Environment=TS_EXTRA_ARGS=--advertise-exit-node --advertise-tags=tag:server
+          Environment=TS_SOCKET=/var/run/tailscale/tailscaled.sock
+          Environment=TS_HOSTNAME=CoreOS-edge-gen2
+
+          # Heath check
+          HealthCmd=wget -q --spider localhost:9002/healthz
+          HealthInterval=1m
+          HealthTimeout=5s
+          HealthRetries=3
+          HealthStartPeriod=10s
+
+          [Service]
+          Restart=always
+          TimeoutStartSec=300
+
+          [Install]
+          WantedBy=default.target
 
 # adding hawser Quadlet
     - path: /etc/containers/systemd/users/1000/hawser.container
@@ -650,51 +674,6 @@
 # arexoor-motd.service
 systemd:
   units:
-    - name: tailscale-connect.service
-      enabled: true
-      contents: |
-        [Unit]
-        Description=Tailscale Connect (Exit Node + Subnet Router + SSH)
-        After=tailscaled.service network-online.target
-        Wants=network-online.target
-
-        [Service]
-        Type=oneshot
-        RemainAfterExit=yes
-        Restart=on-failure
-        RestartSec=10
-        StartLimitIntervalSec=0
-        ExecStartPre=/bin/sh -c 'until [ -x /usr/bin/tailscale ] && /usr/bin/tailscale status >/dev/null 2>&1; do sleep 2; done'
-        ExecStart=/usr/bin/tailscale set \
-          --advertise-exit-node \
-          --advertise-routes=10.100.100.20/32 \
-          --accept-routes \
-          --ssh
-
-        [Install]
-        WantedBy=multi-user.target
-
-    - name: rpm-ostree-install-tailscale.service
-      enabled: true
-      contents: |
-        [Unit]
-        Description=Layer tailscale with rpm-ostree
-        Wants=network-online.target
-        After=network-online.target
-        Before=zincati.service
-        ConditionPathExists=!/var/lib/%N.stamp
-
-        [Service]
-        Type=oneshot
-        RemainAfterExit=yes
-        ExecStart=/usr/bin/rpm-ostree install --reboot --idempotent --allow-inactive tailscale
-        ExecStart=/usr/bin/systemctl enable tailscaled
-        ExecStart=/usr/bin/systemctl start tailscaled
-        ExecStart=/bin/touch /var/lib/%N.stamp
-
-        [Install]
-        WantedBy=multi-user.target
-
     - name: arexoor-motd.service
       enabled: true
       contents: |
