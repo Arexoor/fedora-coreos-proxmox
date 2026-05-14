@@ -566,6 +566,7 @@
           # Persist state across reboots
           Volume=/var/home/core/.local/share/containers/storage/volumes/hawser/_data:/var/home/core/.local/share/containers/storage/volumes/hawser/_data:Z
           Volume=/run/user/1000/podman/podman.sock:/var/run/docker.sock:z
+          Tmpfs=/data/stacks
 
           # Security permissions
           SecurityLabelType=container_runtime_t
