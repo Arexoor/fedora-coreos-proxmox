@@ -513,7 +513,7 @@
 
           # Persist state across reboots
           Volume=tailscale-state:/var/lib/tailscale:Z
-          Volume=tailscale-socket:/var/run/tailscale:z
+          Volume=/var/home/core/volume/tailscale-socket:/var/run/tailscale:z
 
           Network=host
 
@@ -536,6 +536,7 @@
           [Service]
           Restart=always
           TimeoutStartSec=300
+          ExecStartPre=mkdir -p /var/home/core/volume/tailscale-socket
 
           [Install]
           WantedBy=default.target
