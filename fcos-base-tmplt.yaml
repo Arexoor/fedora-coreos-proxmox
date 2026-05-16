@@ -503,6 +503,9 @@
           Internal=true
           NetworkName=rproxy
 
+          [Install]
+          WantedBy=default.target
+
 # adding rootfull tailscale Quadlet
     - path: /etc/containers/systemd/tailscale.container
       mode: 0644
