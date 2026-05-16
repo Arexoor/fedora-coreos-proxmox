@@ -536,7 +536,7 @@
           # Configuration
           Environment=TS_STATE_DIR=/var/lib/tailscale
           Environment=TS_USERSPACE=false
-          Environment=TS_ENABLE_HEALTH_CHECK=true
+          # Environment=TS_ENABLE_HEALTH_CHECK=true
           Environment=TS_AUTH_ONCE=true
           Environment=TS_EXTRA_ARGS=--advertise-exit-node
           Environment=TS_SOCKET=/var/run/tailscale/tailscaled.sock
@@ -544,11 +544,11 @@
           Environment=TS_ACCEPT_DNS=true
 
           # Heath check
-          HealthCmd=wget -q --spider localhost:9002/healthz
-          HealthInterval=1m
-          HealthTimeout=5s
-          HealthRetries=3
-          HealthStartPeriod=10s
+          # HealthCmd=wget -q --spider localhost:9002/healthz
+          # HealthInterval=1m
+          # HealthTimeout=5s
+          # HealthRetries=3
+          # HealthStartPeriod=10s
 
           [Service]
           Restart=always
