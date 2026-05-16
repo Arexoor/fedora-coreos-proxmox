@@ -573,14 +573,17 @@
 
           # Persist state across reboots
           Volume=/var/home/core/quadlet-storage/hawser:/var/home/core/quadlet-storage/hawser:Z
+          Volume=/run/user/1000/podman/podman.sock:/var/run/docker.sock:z
           Tmpfs=/data/stacks
 
           DNS=100.100.100.100
 
+          # Security permissions
+          SecurityLabelType=container_runtime_t
+
           Environment=STACKS_DIR=/var/home/core/quadlet-storage/hawser
           Environment=DOCKHAND_SERVER_URL=wss://dockhand.arexoor.dev/api/hawser/connect
-          Environment=AGENT_NAME=edge-rootless
-          Environment=DOCKER_SOCKET=tcp://socket-proxy-hawser:2375
+          Environment=AGENT_NAME=edge
           EnvironmentFile=/var/home/core/quadlet-storage/hawser.env
 
           [Service]
