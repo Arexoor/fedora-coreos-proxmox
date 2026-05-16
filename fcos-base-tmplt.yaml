@@ -638,6 +638,13 @@
 
 # Enabling podman.socket for the User core
   directories:
+    - path: /var/home/core/quadlet-storage
+      user:
+        name: core
+      group:
+        name: core
+      mode: 0755
+
     - path: /var/home/core/.config
       user:
         name: core
