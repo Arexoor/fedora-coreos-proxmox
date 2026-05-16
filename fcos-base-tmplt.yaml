@@ -530,9 +530,6 @@
           AddCapability=NET_ADMIN
           AddCapability=NET_RAW
 
-          Sysctl=net.ipv4.ip_forward=1
-          Sysctl=net.ipv6.conf.all.forwarding=1
-
           # Configuration
           Environment=TS_STATE_DIR=/var/lib/tailscale
           Environment=TS_USERSPACE=false
@@ -560,68 +557,6 @@
 
 
 # adding rootless hawser Quadlet
-    - path: /etc/containers/systemd/users/1000/socket-proxy-hawser.network
-      mode: 0644
-      contents:
-        inline: |
-          [Network]
-          NetworkName=socket-proxy-hawser
-          Internal=true
-
-    - path: /etc/containers/systemd/users/1000/gw_hawser.network
-      mode: 0644
-      contents:
-        inline: |
-          [Network]
-          Subnet=10.80.200.4/30
-          NetworkName=gw_hawser
-
-    - path: /etc/containers/systemd/users/1000/socket-proxy-hawser.container
-      mode: 0644
-      contents:
-        inline: |
-          [Unit]
-          Description=socket-proxy-hawser
-          After=network-online.target
-          Wants=network-online.target
-
-          [Container]
-          Image=ghcr.io/tecnativa/docker-socket-proxy:latest
-          ContainerName=socket-proxy-hawser
-          AutoUpdate=registry
-
-          # Persist state across reboots
-          Volume=/run/user/1000/podman/podman.sock:/var/run/docker.sock:z
-          Network=socket-proxy-hawser.network
-
-          # Security permissions
-          SecurityLabelType=container_runtime_t
-
-          # Required for Dockhand core functionality
-          Environment=CONTAINERS=1
-          Environment=IMAGES=1
-          Environment=NETWORKS=1
-          Environment=VOLUMES=1
-          Environment=EVENTS=1
-          Environment=POST=1
-          Environment=DELETE=1
-          # Required for dashboard host info and disk usage
-          Environment=INFO=1
-          Environment=SYSTEM=1
-          # Required for vulnerability scanning
-          Environment=ALLOW_START=1
-          Environment=ALLOW_STOP=1
-          Environment=ALLOW_RESTARTS=1
-          # Optional: enable for terminal access
-          Environment=EXEC=1
-
-          [Service]
-          Restart=always
-          TimeoutStartSec=300
-
-          [Install]
-          WantedBy=default.target
-
     - path: /etc/containers/systemd/users/1000/hawser.container
       mode: 0644
       contents:
@@ -640,9 +575,7 @@
           Volume=/var/home/core/quadlet-storage/hawser:/var/home/core/quadlet-storage/hawser:Z
           Tmpfs=/data/stacks
 
-          Network=rproxy.network
-          Network=socket-proxy-hawser.network
-          Network=gw_hawser.network
+          DNS=100.100.100.100
 
           Environment=STACKS_DIR=/var/home/core/quadlet-storage/hawser
           Environment=DOCKHAND_SERVER_URL=wss://dockhand.arexoor.dev/api/hawser/connect
@@ -654,105 +587,7 @@
           Restart=always
           TimeoutStartSec=300
           ExecStartPre=mkdir -p /var/home/core/quadlet-storage/hawser
-
-          [Install]
-          WantedBy=default.target
-
-# adding rootfull hawser Quadlet
-    - path: /etc/containers/systemd/socket-proxy-hawser.network
-      mode: 0644
-      contents:
-        inline: |
-          [Network]
-          NetworkName=socket-proxy-hawser
-          Internal=true
-
-    - path: /etc/containers/systemd/gw_hawser.network
-      mode: 0644
-      contents:
-        inline: |
-          [Network]
-          Subnet=10.80.200.4/30
-          NetworkName=gw_hawser
-
-    - path: /etc/containers/systemd/socket-proxy-hawser.container
-      mode: 0644
-      contents:
-        inline: |
-          [Unit]
-          Description=socket-proxy-hawser
-          After=network-online.target
-          Wants=network-online.target
-
-          [Container]
-          Image=ghcr.io/tecnativa/docker-socket-proxy:latest
-          ContainerName=socket-proxy-hawser
-          AutoUpdate=registry
-
-          # Persist state across reboots
-          Volume=/run/user/1000/podman/podman.sock:/var/run/docker.sock:z
-          Network=socket-proxy-hawser.network
-
-          # Security permissions
-          SecurityLabelType=container_runtime_t
-
-          # Required for Dockhand core functionality
-          Environment=CONTAINERS=1
-          Environment=IMAGES=1
-          Environment=NETWORKS=1
-          Environment=VOLUMES=1
-          Environment=EVENTS=1
-          Environment=POST=0
-          Environment=DELETE=0
-          # Required for dashboard host info and disk usage
-          Environment=INFO=1
-          Environment=SYSTEM=1
-          # Required for vulnerability scanning
-          Environment=ALLOW_START=1
-          Environment=ALLOW_STOP=1
-          Environment=ALLOW_RESTARTS=1
-          # Optional: enable for terminal access
-          Environment=EXEC=0
-
-          [Service]
-          Restart=always
-          TimeoutStartSec=300
-
-          [Install]
-          WantedBy=default.target
-
-    - path: /etc/containers/systemd/hawser.container
-      mode: 0644
-      contents:
-        inline: |
-          [Unit]
-          Description=hawser
-          After=default.target
-          Requires=default.target
-
-          [Container]
-          Image=ghcr.io/finsys/hawser:latest
-          ContainerName=hawser
-          AutoUpdate=registry
-
-          # Persist state across reboots
-          # Volume=/var/home/core/quadlet-storage/hawser-rootfull:/var/home/core/quadlet-storage/hawser-rootfull:Z
-          # Tmpfs=/data/stacks
-          Volume=hawser:/data/stacks
-
-          Network=socket-proxy-hawser.network
-          Network=gw_hawser.network
-
-          # Environment=STACKS_DIR=/var/home/core/quadlet-storage/hawser
-          Environment=DOCKHAND_SERVER_URL=wss://dockhand.arexoor.dev/api/hawser/connect
-          Environment=AGENT_NAME=edge-rootfull
-          Environment=DOCKER_SOCKET=tcp://socket-proxy-hawser:2375
-          EnvironmentFile=/var/home/core/quadlet-storage/hawser-rootfull.env
-
-          [Service]
-          Restart=always
-          TimeoutStartSec=300
-          ExecStartPre=mkdir -p /var/home/core/quadlet-storage/hawser
+          ExecStartPre=chown core:core /var/home/core/quadlet-storage/hawser
 
           [Install]
           WantedBy=default.target
