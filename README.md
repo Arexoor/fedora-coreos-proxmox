@@ -9,13 +9,37 @@ Enabled rootless podman socket for user core
 Enabel lingering for user core
 Deploy tailscale container
 Deploy dockhand container with podman socket access
-Added virtiofs auto mounting
+Added virtiofs auto mounting (discovered inside the VM via /sys/fs/virtiofs)
+Containers only start when the virtiofs storage is mounted
 Added ipv6 support
 Added network configuration via the VM notes field (works for SR-IOV / passthrough NICs)
 Network configuration is file based (NetworkManager keyfiles) and self-healing on every boot
 
 ## Permissions
 VirtioFS folder on the host need to be owned by user 1000:1000
+
+## VirtioFS automounting
+
+Virtiofs shares added to the VM in Proxmox are mounted automatically inside the VM:
+`geco-virtiofs.service` runs `/usr/local/bin/geco-virtiofs` on every boot, which reads
+the available device tags from `/sys/fs/virtiofs/<n>/tag`, generates a systemd mount
+unit `var-mnt-<tag>.mount` per share (mounted at `/var/mnt/<tag>`) and removes mounts
+whose device is gone. No configuration on the host side is needed.
+
+Because the podman `volume_path` lives on the virtiofs (`/var/mnt/volume-storage`),
+containers are guarded against starting without their storage:
+
+* `tailscale.container` and `dockhand.container` carry
+  `ConditionPathIsMountPoint=/var/mnt/volume-storage` — if the mount failed they are
+  skipped instead of writing into the empty mountpoint directory
+* user sessions (rootless quadlets) are ordered after `geco-virtiofs.service` via a
+  `user@.service` drop-in
+* `podman-restart.service` (restarts dockhand-deployed containers) carries the same
+  mount condition via a user unit drop-in
+
+If a mount fails, `geco-virtiofs.service` itself fails visibly (`systemctl status
+geco-virtiofs.service`) and the dependent containers stay down until the next
+successful boot.
 
 
 ## Create FCOS VM Template

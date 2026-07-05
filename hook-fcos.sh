@@ -97,9 +97,10 @@ then
     NEEDS_RESTART=false
 
     # ==================================================================================================================================================================
-    # Virtiofs: vendor-data snippet generieren
+    # Vendor-data snippet generieren (network overrides aus dem Notes Feld)
+    # Virtiofs mounts werden seit geco-virtiofs im Gast selbst über /sys/fs/virtiofs erkannt
     # ==================================================================================================================================================================
-    echo "Fedora CoreOS: Generate virtiofs mount block... "
+    echo "Fedora CoreOS: Generate vendor-data snippet... "
     if [[ -f "${VMCONF}" ]]; then
 
         old_hash=""
@@ -107,23 +108,7 @@ then
             pvesh get /nodes/$(hostname)/qemu/${vmid}/config 2>/dev/null | grep -q cicustom && \
             old_hash="$(md5sum "${SNIPPETS_FILES_PATH}/${vmid}-vendor-data.yaml" | awk '{print $1}')"
 
-        > "${SNIPPETS_FILES_PATH}/${vmid}-vendor-data.yaml"
-        echo "mounts:" >> "${SNIPPETS_FILES_PATH}/${vmid}-vendor-data.yaml"
-
-        grep ^virtiofs "${VMCONF}" | while read -r line; do
-            tag=$(echo "$line" | awk -F'[ ,]' '{print $2}')
-            [[ -z "$tag" ]] && continue
-
-            mountpoint="/var/mnt/${tag}"
-            mountpoint_name="var-mnt-${tag}.mount"
-            echo "Create Virtiofs mount ${mountpoint_name}"
-
-            echo "   - name: virtiofs-${tag}"  >> "${SNIPPETS_FILES_PATH}/${vmid}-vendor-data.yaml"
-            echo "     type: virtiofs"          >> "${SNIPPETS_FILES_PATH}/${vmid}-vendor-data.yaml"
-            echo "     what: ${tag}"            >> "${SNIPPETS_FILES_PATH}/${vmid}-vendor-data.yaml"
-            echo "     where: ${mountpoint}"    >> "${SNIPPETS_FILES_PATH}/${vmid}-vendor-data.yaml"
-            echo "     options: rw,relatime"    >> "${SNIPPETS_FILES_PATH}/${vmid}-vendor-data.yaml"
-        done
+        echo "# Managed by hook-fcos.sh, do not edit." > "${SNIPPETS_FILES_PATH}/${vmid}-vendor-data.yaml"
 
         # Network overrides from the VM notes field (see generate_notes_network).
         # They end up on the cloudinit iso as vendor-data and are applied inside

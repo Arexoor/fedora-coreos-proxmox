@@ -28,6 +28,124 @@
           sleep 1; echo -e "\e[33mIPv4 Address:\e[0m $(ip route get 8.8.8.8 | awk 'NR==1 {print $7}')" >> ${OUT}
           echo -e "\e[33mPublic IPv4 Address:\e[0m $(curl https://ipv4.icanhazip.com)\n" >> ${OUT}
 
+# virtiofs automount script
+    - path: /usr/local/bin/geco-virtiofs
+      mode: 0755
+      contents:
+        inline: |
+          #!/bin/bash
+          #
+          #  Discover virtiofs devices from /sys/fs/virtiofs/<n>/tag and mount
+          #  them under /var/mnt/<tag> via generated systemd mount units.
+          #  Idempotent: runs on every boot, removes mounts whose virtiofs device
+          #  is gone and exits non-zero if a mount cannot be started (used as a
+          #  safeguard so containers do not start without their storage).
+          #
+          # ===================================================================================
+          declare -r VERSION=1.2607
+
+          SYSFS_PATH=/sys/fs/virtiofs
+          UNIT_PATH=/etc/systemd/system
+          MARKER="# managed-by=geco-virtiofs"
+          OLD_MARKER="# managed-by=cloudinit-virtiofs" # adopt units of the old vendor-data logic
+
+          FAILED=false
+
+          # without the sysfs interface we cannot tell which mounts are valid,
+          # never treat existing mounts as orphans in that case
+          [[ -d "${SYSFS_PATH}" ]]|| {
+            echo "[WARN]: Virtiofs: ${SYSFS_PATH} not available, leaving mounts untouched..."
+            exit 0
+          }
+
+          # collect all currently managed unit files, assume orphan until confirmed
+          declare -A active_units
+          for unit_path in "${UNIT_PATH}"/*.mount; do
+            [[ -e "${unit_path}" ]]|| continue
+            grep -q -e "^${MARKER}$" -e "^${OLD_MARKER}$" "${unit_path}" 2>/dev/null && \
+              active_units["$(basename "${unit_path}")"]="orphan"
+          done
+
+          # generate, enable and start a mount unit per virtiofs tag
+          for tag_file in "${SYSFS_PATH}"/*/tag; do
+            [[ -e "${tag_file}" ]]|| continue
+            tag="$(cat "${tag_file}")"
+            [[ -n "${tag}" ]]|| continue
+
+            where="/var/mnt/${tag}"
+            unit_file="$(systemd-escape --path --suffix=mount "${where}")"
+            unit_path="${UNIT_PATH}/${unit_file}"
+            active_units["${unit_file}"]="confirmed"
+
+            unit_content="${MARKER}
+          [Unit]
+          Description=Mount VirtioFS ${tag} directory
+          DefaultDependencies=no
+
+          After=sysinit.target
+          Before=multi-user.target
+
+          [Mount]
+          What=${tag}
+          Where=${where}
+          Type=virtiofs
+          Options=rw,relatime
+
+          [Install]
+          WantedBy=multi-user.target"
+
+            if [[ -e "${unit_path}" ]] && [[ "x$(cat "${unit_path}")" == "x${unit_content}" ]]; then
+              systemctl --quiet is-active "${unit_file}" && {
+                echo "[INFO]: Virtiofs: mount ${unit_file} unchanged and active, skipping..."
+                continue
+              }
+            else
+              echo -n "[INFO]: Virtiofs: writing systemd mount unit ${unit_file}... "
+              echo "${unit_content}" > "${unit_path}" || { echo "[failed]"; FAILED=true; continue; }
+              echo "[done]"
+              systemctl daemon-reload
+            fi
+
+            [[ -d "${where}" ]]|| mkdir -p "${where}"
+
+            echo -n "[INFO]: Virtiofs: enabling and starting ${unit_file}... "
+            systemctl enable "${unit_file}" 2>/dev/null && \
+            systemctl start "${unit_file}" || { echo "[failed]"; FAILED=true; continue; }
+            echo "[done]"
+          done
+
+          # cleanup orphaned units (managed by us, but the virtiofs device is gone)
+          needs_daemon_reload=false
+          for unit_file in "${!active_units[@]}"; do
+            [[ "${active_units[${unit_file}]}" == "confirmed" ]]&& continue
+
+            unit_path="${UNIT_PATH}/${unit_file}"
+            echo "[INFO]: Virtiofs: orphaned mount unit detected: ${unit_file}"
+
+            echo -n "[INFO]: Virtiofs: stopping ${unit_file}... "
+            systemctl stop "${unit_file}" 2>/dev/null && echo "[done]" || echo "[not active]"
+
+            echo -n "[INFO]: Virtiofs: disabling ${unit_file}... "
+            systemctl disable "${unit_file}" 2>/dev/null && echo "[done]" || echo "[not enabled]"
+
+            mountpoint="$(grep ^Where= "${unit_path}" | cut -d= -f2)"
+            echo -n "[INFO]: Virtiofs: removing unit file ${unit_file}... "
+            rm -f "${unit_path}" && echo "[done]" || echo "[failed]"
+
+            [[ -n "${mountpoint}" ]] && [[ -d "${mountpoint}" ]] && \
+              rmdir "${mountpoint}" 2>/dev/null
+
+            needs_daemon_reload=true
+          done
+          ${needs_daemon_reload} && systemctl daemon-reload
+
+          ${FAILED} && {
+            echo "[ERROR]: Virtiofs: at least one mount failed..."
+            exit 1
+          }
+
+          exit 0
+
 # network configuration script
     - path: /usr/local/bin/geco-network
       mode: 0755
@@ -365,121 +483,6 @@
           }
           setup_yq
 
-          setup_virtiofs_mounts() {
-            local vendor_data="${CIPATH}/vendor-data"
-            local MANAGED_MARKER="# managed-by=cloudinit-virtiofs"
-
-            # Collect all currently managed unit files on the system
-            declare -A active_units
-            for existing_unit in /etc/systemd/system/*.mount; do
-              [[ -e "${existing_unit}" ]] || continue
-              grep -q "^${MANAGED_MARKER}$" "${existing_unit}" 2>/dev/null && \
-                active_units["$(basename "${existing_unit}")"]="orphan" # assume orphan until confirmed
-            done
-
-            # No vendor-data: stop+disable+remove all managed units
-            [[ ! -e "${vendor_data}" ]] && {
-              echo "[INFO]: Cloudinit: no vendor-data found, skipping virtiofs mounts..."
-            }
-
-            local mount_count=0
-            if [[ -e "${vendor_data}" ]]; then
-              mount_count="$(${YQ} ${vendor_data} 'mounts[*].name' 2>/dev/null | wc -l)" || mount_count=0
-            fi
-
-            # Process mounts from vendor-data
-            for (( i=0; i<${mount_count}; i++ )); do
-              local name what where type options after_network unit_file
-
-              name="$(${YQ} ${vendor_data} "mounts[${i}].name" 2>/dev/null)"       || continue
-              what="$(${YQ} ${vendor_data} "mounts[${i}].what" 2>/dev/null)"       || continue
-              where="$(${YQ} ${vendor_data} "mounts[${i}].where" 2>/dev/null)"     || continue
-              type="$(${YQ} ${vendor_data} "mounts[${i}].type" 2>/dev/null)"       || continue
-              options="$(${YQ} ${vendor_data} "mounts[${i}].options" 2>/dev/null)" || options=""
-
-              unit_file="$(systemd-escape --path --suffix=mount "${where}")"
-              local unit_path="/etc/systemd/system/${unit_file}"
-
-              # Mark as confirmed (not an orphan)
-              active_units["${unit_file}"]="confirmed"
-
-              # Build unit content
-              local unit_content="${MANAGED_MARKER}
-          [Unit]
-          Description=Mount VirtioFS ${name} directory
-          DefaultDependencies=no"
-              unit_content+="
-
-          After=sysinit.target
-          Before=multi-user.target"
-              unit_content+="
-
-          [Mount]
-          What=${what}
-          Where=${where}
-          Type=${type}"
-              [[ -n "${options}" ]] && unit_content+="
-          Options=${options}"
-              unit_content+="
-
-          [Install]
-          WantedBy=multi-user.target"
-
-              # Skip if unchanged
-              if [[ -e "${unit_path}" ]] && [[ "x$(cat "${unit_path}")" == "x${unit_content}" ]]; then
-                echo "[INFO]: Cloudinit: mount unit ${unit_file} unchanged, skipping..."
-                continue
-              fi
-
-              echo -n "[INFO]: Cloudinit: writing systemd mount unit ${unit_file}... "
-              echo "${unit_content}" > "${unit_path}" || { echo "[failed]"; continue; }
-              echo "[done]"
-
-              [[ ! -d "${where}" ]] && {
-                echo -n "[INFO]: Cloudinit: creating mountpoint ${where}... "
-                mkdir -p "${where}" || { echo "[failed]"; continue; }
-                echo "[done]"
-              }
-
-              echo -n "[INFO]: Cloudinit: enabling and starting ${unit_file}... "
-              systemctl daemon-reload && \
-              systemctl enable "${unit_file}" && \
-              systemctl start "${unit_file}" || { echo "[failed]"; continue; }
-              echo "[done]"
-            done
-
-            # Cleanup orphaned units (were managed by us, but no longer in vendor-data)
-            local needs_daemon_reload=0
-            for unit_file in "${!active_units[@]}"; do
-              [[ "${active_units[${unit_file}]}" == "confirmed" ]] && continue
-
-              local unit_path="/etc/systemd/system/${unit_file}"
-              echo "[INFO]: Cloudinit: orphaned mount unit detected: ${unit_file}"
-
-              echo -n "[INFO]: Cloudinit: stopping ${unit_file}... "
-              systemctl stop "${unit_file}" 2>/dev/null && echo "[done]" || echo "[not active]"
-
-              echo -n "[INFO]: Cloudinit: disabling ${unit_file}... "
-              systemctl disable "${unit_file}" 2>/dev/null && echo "[done]" || echo "[not enabled]"
-
-              mountpoint="$(grep ^Where= "${unit_path}" | cut -d= -f2)"
-              echo -n "[INFO]: Cloudinit: removing unit file ${unit_file}... "
-              rm -f "${unit_path}" && echo "[done]" || echo "[failed]"
-
-              if [[ -n "${mountpoint}" ]] && [[ -d "${mountpoint}" ]]; then
-                  rmdir "${mountpoint}" 2>/dev/null && echo "[done]" || echo "[not empty, skipping]"
-              fi
-
-              needs_daemon_reload=1
-            done
-
-            [[ ${needs_daemon_reload} -eq 1 ]] && {
-              echo -n "[INFO]: Cloudinit: reloading systemd after cleanup... "
-              systemctl daemon-reload && echo "[done]" || echo "[failed]"
-            }
-            return 0
-          }
-
           # ===================================================================================
           # main()
           [[ ! -e /dev/sr0 ]]&& {
@@ -495,10 +498,7 @@
             exit 1
           }
 
-          # virtiofs läuft immer, unabhängig von cloudinit änderungen
-          setup_virtiofs_mounts
-
-          # network läuft ebenfalls immer: file-basiert & idempotent, repariert
+          # network läuft immer: file-basiert & idempotent, repariert
           # eine kaputte konfiguration bei jedem boot (siehe geco-network)
           /usr/local/bin/geco-network || echo "[WARN]: Cloudinit: network configuration failed..."
 
@@ -598,6 +598,23 @@
           net.ipv6.conf.default.temp_prefered_lft = 1500
           net.ipv6.conf.default.temp_valid_lft = 1800
 
+# delay user sessions (rootless podman quadlets) until geco-virtiofs handled the mounts
+    - path: /etc/systemd/system/user@.service.d/geco-virtiofs.conf
+      mode: 0644
+      contents:
+        inline: |
+          [Unit]
+          After=geco-virtiofs.service
+
+# dockhand deployed containers store their volumes on the virtiofs (volume_path),
+# do not restart them when the virtiofs is not mounted
+    - path: /etc/systemd/user/podman-restart.service.d/geco-virtiofs.conf
+      mode: 0644
+      contents:
+        inline: |
+          [Unit]
+          ConditionPathIsMountPoint=/var/mnt/volume-storage
+
 # creating podman network for the reverse proxy
     - path: /etc/containers/systemd/users/1000/rproxy.network
       mode: 0644
@@ -617,8 +634,11 @@
         inline: |
           [Unit]
           Description=Tailscale VPN
-          After=network-online.target
+          After=network-online.target geco-virtiofs.service
           Wants=network-online.target
+          # the tailscale-state volume lives on the virtiofs (volume_path),
+          # never start without the storage mounted
+          ConditionPathIsMountPoint=/var/mnt/volume-storage
 
           [Container]
           Image=docker.io/tailscale/tailscale:stable
@@ -734,6 +754,8 @@
           Requires=default.target var-mnt-volume\x2dstorage.mount
           After=socket-proxy-dockhand.container
           Requires=socket-proxy-dockhand.container
+          # never start without the virtiofs storage mounted
+          ConditionPathIsMountPoint=/var/mnt/volume-storage
 
           [Container]
           Image=docker.io/fnsys/dockhand:latest
@@ -850,6 +872,23 @@ systemd:
         [Service]
         Type=oneshot
         ExecStart=/usr/local/bin/arexoor-motd
+        RemainAfterExit=yes
+
+        [Install]
+        WantedBy=multi-user.target
+
+# geco-virtiofs: discover and mount virtiofs shares on every boot
+    - name: geco-virtiofs.service
+      enabled: true
+      contents: |
+        [Unit]
+        Description=Geco-iT VirtioFS automount
+        Before=multi-user.target
+
+        [Service]
+        Type=oneshot
+        TimeoutStartSec=0
+        ExecStart=/usr/local/bin/geco-virtiofs
         RemainAfterExit=yes
 
         [Install]
