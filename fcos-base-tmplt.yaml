@@ -713,6 +713,9 @@
           ContainerName=tailscale-socket-proxy
           AutoUpdate=registry
           ReadOnly=true
+          # the image defaults to user 65534 (nobody), but this proxy must run
+          # as root: tailscaled's peer credential check has to see uid 0
+          User=0:0
 
           # the real tailscaled socket: the proxy connects as root, which
           # satisfies tailscaled's internal peer credential check
@@ -738,7 +741,12 @@
 
           [Service]
           Restart=always
+          RestartSec=5
           TimeoutStartSec=300
+          # socket-proxy exits immediately when the backend socket is missing:
+          # tailscaled needs a moment after container start to bind it, so
+          # wait for the socket (bounded by TimeoutStartSec)
+          ExecStartPre=/bin/sh -c 'until test -S /run/tailscale/tailscaled.sock; do sleep 1; done'
           # the directory is only accessible for core, so the 0666 socket
           # inside is still limited to the core user (docktail)
           ExecStartPre=/bin/mkdir -p /var/home/core/quadlet-storage/docktail-tailscale-socket
