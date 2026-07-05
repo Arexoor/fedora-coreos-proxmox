@@ -750,8 +750,8 @@
         inline: |
           [Unit]
           Description=dockhand
-          After=default.target var-mnt-volume\x2dstorage.mount
-          Requires=default.target var-mnt-volume\x2dstorage.mount
+          After=default.target
+          Requires=default.target
           After=socket-proxy-dockhand.container
           Requires=socket-proxy-dockhand.container
           # never start without the virtiofs storage mounted
