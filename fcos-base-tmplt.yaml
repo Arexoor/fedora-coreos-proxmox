@@ -656,7 +656,10 @@
 
           # Persist state across reboots
           Volume=tailscale-state:/var/lib/tailscale:Z
-          Volume=/var/home/core/quadlet-storage/tailscale-socket:/var/run/tailscale:z
+          # runtime socket on a root-only tmpfs path: rootless never talks to
+          # the real socket, docktail uses the filtered one from
+          # tailscale-socket-proxy
+          Volume=/run/tailscale:/var/run/tailscale:z
 
           AddDevice=/dev/net/tun
 
@@ -684,7 +687,63 @@
           [Service]
           Restart=always
           TimeoutStartSec=300
-          ExecStartPre=mkdir -p /var/home/core/quadlet-storage/tailscale-socket
+          ExecStartPre=mkdir -p -m 0700 /run/tailscale
+
+          [Install]
+          WantedBy=default.target
+
+# tailscale socket proxy: docktail (rootless, core userspace) must change the
+# tailscale serve config, but tailscaled only allows root to do that (peer
+# credential check on the socket, independent of file permissions). This proxy
+# connects to the real socket as root and exposes a filtered socket to the
+# core user, allowlisting only the localapi endpoints needed for "serve".
+    - path: /etc/containers/systemd/tailscale-socket-proxy.container
+      mode: 0644
+      contents:
+        inline: |
+          [Unit]
+          Description=Tailscale socket proxy for docktail
+          After=tailscale.service
+          Requires=tailscale.service
+          # same guard as tailscale itself
+          ConditionPathIsMountPoint=/var/mnt/volume-storage
+
+          [Container]
+          Image=ghcr.io/wollomatic/socket-proxy:1
+          ContainerName=tailscale-socket-proxy
+          AutoUpdate=registry
+          ReadOnly=true
+
+          # the real tailscaled socket: the proxy connects as root, which
+          # satisfies tailscaled's internal peer credential check
+          Volume=/run/tailscale:/var/run/tailscale:z
+          # the filtered socket for docktail: mount this directory into
+          # docktail at /var/run/tailscale
+          Volume=/var/home/core/quadlet-storage/docktail-tailscale-socket:/run/filtered:z
+
+          # allow only what the tailscale cli needs for "serve" (docktail
+          # shells out to the bundled cli), everything else (logout, taildrop,
+          # keys, certs, debug, ...) is blocked. Blocked requests are logged:
+          # journalctl -u tailscale-socket-proxy.service
+          Exec=-loglevel=info \
+               -socketpath=/var/run/tailscale/tailscaled.sock \
+               -proxysocketendpoint=/run/filtered/tailscaled.sock \
+               -proxysocketendpointfilemode=0666 \
+               -watchdoginterval=120 \
+               -stoponwatchdog \
+               -shutdowngracetime=5 \
+               -allowGET=/localapi/v0/(status|prefs|serve-config|check-funnel-access|watch-ipn-bus) \
+               -allowPOST=/localapi/v0/(serve-config|query-feature) \
+               -allowPATCH=/localapi/v0/prefs
+
+          [Service]
+          Restart=always
+          TimeoutStartSec=300
+          # the directory is only accessible for core, so the 0666 socket
+          # inside is still limited to the core user (docktail)
+          ExecStartPre=/bin/mkdir -p /var/home/core/quadlet-storage/docktail-tailscale-socket
+          ExecStartPre=/bin/chown 1000:1000 /var/home/core/quadlet-storage/docktail-tailscale-socket
+          ExecStartPre=/bin/chmod 0750 /var/home/core/quadlet-storage/docktail-tailscale-socket
 
           [Install]
           WantedBy=default.target

@@ -14,6 +14,7 @@ Containers only start when the virtiofs storage is mounted
 Added ipv6 support
 Added network configuration via the VM notes field (works for SR-IOV / passthrough NICs)
 Network configuration is file based (NetworkManager keyfiles) and self-healing on every boot
+Filtered tailscale socket for docktail (rootless) via wollomatic/socket-proxy
 
 ## Permissions
 VirtioFS folder on the host need to be owned by user 1000:1000
@@ -41,6 +42,36 @@ If a mount fails, `geco-virtiofs.service` itself fails visibly (`systemctl statu
 geco-virtiofs.service`) and the dependent containers stay down until the next
 successful boot.
 
+
+## Tailscale socket for docktail
+
+[DockTail](https://github.com/marvinvr/docktail) (rootless, core userspace) exposes
+containers to the tailnet via labels and therefore has to change the tailscale serve
+configuration. tailscaled checks the *peer credentials* of whoever connects to its
+socket and only allows root to change the configuration — file permissions on the
+socket don't help, and the rootless core user is always rejected.
+
+`tailscale-socket-proxy.container` (rootful, [wollomatic/socket-proxy](https://github.com/wollomatic/socket-proxy))
+solves this: it connects to the real `tailscaled.sock` **as root** (passing the peer
+credential check) and exposes a filtered socket at
+`/var/home/core/quadlet-storage/docktail-tailscale-socket/tailscaled.sock`. The
+directory is only accessible for the core user. Mount it into docktail:
+
+```
+Volume=/var/home/core/quadlet-storage/docktail-tailscale-socket:/var/run/tailscale
+```
+
+Only the localapi endpoints needed by `tailscale serve` are allowed
+(`status`, `prefs`, `serve-config`, `check-funnel-access`, `watch-ipn-bus` for GET,
+`serve-config`/`query-feature` for POST, `prefs` for PATCH) — logout, taildrop, key
+material, certificate private keys and all debug endpoints are blocked. If docktail
+needs an additional endpoint it shows up as a blocked request in
+`journalctl -u tailscale-socket-proxy.service`: extend the matching `-allow<METHOD>`
+regex in the quadlet.
+
+Docktail additionally needs the container engine socket, e.g. the rootless podman
+socket (`/run/user/1000/podman/podman.sock`) mounted read-only to
+`/var/run/docker.sock`.
 
 ## Create FCOS VM Template
 
