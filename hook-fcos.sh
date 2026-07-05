@@ -43,6 +43,50 @@ setup_yq()
 }
 setup_yq
 
+mask2cdr()
+{
+        # Assumes there's no "255." after a non-255 byte in the mask
+        local x=${1##*255.}
+        set -- 0^^^128^192^224^240^248^252^254^ $(( (${#1} - ${#x})*2 )) ${x%%.*}
+        x=${1%%$3*}
+        echo $(( $2 + (${#x}/4) ))
+}
+
+# Parse network overrides from the VM notes (description field) and print them
+# as a yaml "network:" list for the vendor-data snippet.
+# Recognized notes syntax, everything else in the notes is ignored:
+#   [net0]
+#   mac=bc:24:11:aa:bb:cc
+#   ipv4=192.168.1.10/24     (or: dhcp)
+#   ipv4_gateway=192.168.1.1
+#   ipv6=slaac               (slaac|dhcp|disabled)
+#   ipv6_privacy=on          (on|off)
+generate_notes_network()
+{
+    local desc section line key value
+    desc="$(pvesh get /nodes/$(hostname)/qemu/${vmid}/config --output-format json 2>/dev/null | ${YQ} - 'description' 2>/dev/null)" || return 0
+    [[ -n "${desc}" ]] || return 0
+
+    section=""
+    while IFS= read -r line; do
+        line="$(echo "${line}" | tr -d '\r' | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
+        if [[ "${line}" =~ ^\[net([0-9]+)\]$ ]]; then
+            section="net${BASH_REMATCH[1]}"
+            echo "   - name: ${section}"
+            continue
+        fi
+        [[ "${line}" =~ ^\[.*\]$ ]] && { section=""; continue; }
+        [[ -n "${section}" ]] || continue
+        [[ "${line}" == *=* ]] || continue
+        key="$(echo "${line%%=*}" | sed -e 's/[[:space:]]*$//' | tr 'A-Z-' 'a-z_')"
+        value="$(echo "${line#*=}" | sed -e 's/^[[:space:]]*//')"
+        case "${key}" in
+            mac|mac_address) echo "     mac: \"${value}\"" ;;
+            ipv4|ipv4_gateway|ipv6|ipv6_privacy) echo "     ${key}: \"${value}\"" ;;
+        esac
+    done <<< "${desc}"
+}
+
 # ==================================================================================================================================================================
 # main()
 #
@@ -78,6 +122,16 @@ then
             echo "     where: ${mountpoint}"    >> "${SNIPPETS_FILES_PATH}/${vmid}-vendor-data.yaml"
             echo "     options: rw,relatime"    >> "${SNIPPETS_FILES_PATH}/${vmid}-vendor-data.yaml"
         done
+
+        # Network overrides from the VM notes field (see generate_notes_network).
+        # They end up on the cloudinit iso as vendor-data and are applied inside
+        # the VM by /usr/local/bin/geco-network on every boot.
+        echo "Fedora CoreOS: Generate network overrides from VM notes... "
+        network_overrides="$(generate_notes_network)"
+        [[ -n "${network_overrides}" ]] && {
+            echo "network:" >> "${SNIPPETS_FILES_PATH}/${vmid}-vendor-data.yaml"
+            echo "${network_overrides}" >> "${SNIPPETS_FILES_PATH}/${vmid}-vendor-data.yaml"
+        }
 
         new_hash="$(md5sum "${SNIPPETS_FILES_PATH}/${vmid}-vendor-data.yaml" | awk '{print $1}')"
         cicustom_path="vendor=local:snippets/${vmid}-vendor-data.yaml"
@@ -145,7 +199,7 @@ then
         searchdomain="$(qm cloudinit dump ${vmid} network | ${YQ} - "config[${netcards}].search[*]" | paste -s -d ";" -)"
         for (( i=0; i<${netcards}; i++ ))
         do
-            ipv4_type="" ipv4="" netmask="" gw="" macaddr="" # reset on each run
+            ipv4_type="" ipv4="" netmask="" cidr="" gw="" macaddr="" # reset on each run
             ipv6_type="" ipv6_addr="" ipv6_gw=""
 
             ipv4_type="$(qm cloudinit dump ${vmid} network | ${YQ} - config[${i}].subnets[0].type 2>/dev/null)" || true
@@ -166,23 +220,26 @@ then
             echo "          [connection]" >> ${COREOS_FILES_PATH}/${vmid}.yaml
             echo "          type=ethernet" >> ${COREOS_FILES_PATH}/${vmid}.yaml
             echo "          id=net${i}" >> ${COREOS_FILES_PATH}/${vmid}.yaml
-            echo "          #interface-name=eth${i}" >> ${COREOS_FILES_PATH}/${vmid}.yaml
             echo "" >> ${COREOS_FILES_PATH}/${vmid}.yaml
             echo "          [ethernet]" >> ${COREOS_FILES_PATH}/${vmid}.yaml
             echo "          mac-address=${macaddr}" >> ${COREOS_FILES_PATH}/${vmid}.yaml
             echo "" >> ${COREOS_FILES_PATH}/${vmid}.yaml
             echo "          [ipv4]" >> ${COREOS_FILES_PATH}/${vmid}.yaml
             if [[ "${ipv4_type}" == "static" ]]; then
+                # NetworkManager keyfiles require a cidr prefix length,
+                # a dotted netmask makes the whole profile fail to load
+                if [[ "${ipv4}" == */* ]]; then cidr="" # address already contains a prefix
+                elif [[ "${netmask}" == *.* ]]; then cidr="/$(mask2cdr ${netmask})"
+                elif [[ -n "${netmask}" ]]; then cidr="/${netmask}"
+                else cidr="/24"; fi
                 echo "          method=manual" >> ${COREOS_FILES_PATH}/${vmid}.yaml
-                echo "          addresses=${ipv4}/${netmask}" >> ${COREOS_FILES_PATH}/${vmid}.yaml
+                echo "          addresses=${ipv4}${cidr}" >> ${COREOS_FILES_PATH}/${vmid}.yaml
                 [[ -n "${gw}" ]] && echo "          gateway=${gw}" >> ${COREOS_FILES_PATH}/${vmid}.yaml
-                echo "          dns=${nameservers}" >> ${COREOS_FILES_PATH}/${vmid}.yaml
-                echo "          dns-search=${searchdomain}" >> ${COREOS_FILES_PATH}/${vmid}.yaml
             else
                 echo "          method=auto" >> ${COREOS_FILES_PATH}/${vmid}.yaml
-                echo "          dns=${nameservers}" >> ${COREOS_FILES_PATH}/${vmid}.yaml
-                echo "          dns-search=${searchdomain}" >> ${COREOS_FILES_PATH}/${vmid}.yaml
             fi
+            [[ -n "${nameservers}" ]] && echo "          dns=${nameservers}" >> ${COREOS_FILES_PATH}/${vmid}.yaml
+            [[ -n "${searchdomain}" ]] && echo "          dns-search=${searchdomain}" >> ${COREOS_FILES_PATH}/${vmid}.yaml
             echo "" >> ${COREOS_FILES_PATH}/${vmid}.yaml
             echo "          [ipv6]" >> ${COREOS_FILES_PATH}/${vmid}.yaml
             if [[ "${ipv6_type}" == "ipv6_slaac" ]]; then

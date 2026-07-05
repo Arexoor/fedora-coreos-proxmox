@@ -11,6 +11,8 @@ Deploy tailscale container
 Deploy dockhand container with podman socket access
 Added virtiofs auto mounting
 Added ipv6 support
+Added network configuration via the VM notes field (works for SR-IOV / passthrough NICs)
+Network configuration is file based (NetworkManager keyfiles) and self-healing on every boot
 
 ## Permissions
 VirtioFS folder on the host need to be owned by user 1000:1000
@@ -101,6 +103,43 @@ Only these parameters are supported by our cloudinit wrapper:
 * DNS domain
 * DNS Servers
 * SSH public key
-* IP Configuration (ipv4 only)
+* IP Configuration (ipv4 + ipv6)
 
 The settings are applied at boot
+
+## Network configuration via VM Notes
+
+In addition to cloudinit, network interfaces can be configured through the VM **Notes**
+(description) field in Proxmox. This also works for interfaces that Proxmox does not
+recognize as network devices (e.g. SR-IOV VFs / PCI passthrough NICs), because the
+interface is matched inside the VM by its MAC address.
+
+Add one block per interface to the notes, all other notes content is ignored:
+
+```
+[net0]
+mac=bc:24:11:aa:bb:cc
+ipv4=192.168.1.10/24
+ipv4_gateway=192.168.1.1
+ipv6=slaac
+ipv6_privacy=on
+```
+
+* `[netN]` — `net0` up to the number of cloudinit NICs overrides the matching cloudinit
+  interface; any other index defines an additional interface (e.g. an SR-IOV VF).
+  Additional interfaces require `mac`.
+* `mac` — MAC address used to match the interface inside the VM
+* `ipv4` — address in CIDR notation (`192.168.1.10/24`) or `dhcp`
+* `ipv4_gateway` — IPv4 gateway
+* `ipv6` — `slaac`, `dhcp` or `disabled` (default for additional interfaces: `disabled`)
+* `ipv6_privacy` — `on` (default, prefers temporary addresses) or `off` (EUI-64, address
+  derived from the MAC)
+
+All keys are optional, notes values override the cloudinit values per key.
+
+The pre-start hook parses the notes, writes the result into the vendor-data snippet
+(same mechanism as the virtiofs mounts) and restarts the VM once if it changed. Inside
+the VM `/usr/local/bin/geco-network` runs on every boot: it generates the NetworkManager
+keyfiles in `/etc/NetworkManager/system-connections/` from cloudinit + notes and only
+reloads the network when a file actually changed — a broken or lost network
+configuration is repaired automatically on the next boot.

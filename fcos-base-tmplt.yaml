@@ -28,6 +28,265 @@
           sleep 1; echo -e "\e[33mIPv4 Address:\e[0m $(ip route get 8.8.8.8 | awk 'NR==1 {print $7}')" >> ${OUT}
           echo -e "\e[33mPublic IPv4 Address:\e[0m $(curl https://ipv4.icanhazip.com)\n" >> ${OUT}
 
+# network configuration script
+    - path: /usr/local/bin/geco-network
+      mode: 0755
+      contents:
+        inline: |
+          #!/bin/bash
+          #
+          #  Generate NetworkManager keyfiles from the cloudinit network-config
+          #  merged with the Proxmox notes overrides (vendor-data network section).
+          #  File based and idempotent: runs on every boot and only reloads the
+          #  network when a generated keyfile differs from what is on disk.
+          #
+          #  Notes format (in the Proxmox VM notes field):
+          #    [net0]
+          #    mac=bc:24:11:aa:bb:cc
+          #    ipv4=192.168.1.10/24     (or: dhcp)
+          #    ipv4_gateway=192.168.1.1
+          #    ipv6=slaac               (slaac|dhcp|disabled)
+          #    ipv6_privacy=on          (on|off)
+          #
+          # ===================================================================================
+          declare -r VERSION=1.2607
+
+          CIPATH=/run/cloudinit
+          NMPATH=/etc/NetworkManager/system-connections
+          YQ="/usr/local/bin/yq read --exitStatus --printMode v --stripComments --"
+
+          # ===================================================================================
+          # functions()
+          MOUNTED_BY_ME=false
+          catch() {
+            ${MOUNTED_BY_ME} && umount ${CIPATH} && rmdir ${CIPATH}
+          }
+          trap 'catch' EXIT
+
+          mask2cdr()
+          {
+            # Assumes there's no "255." after a non-255 byte in the mask
+            local x=${1##*255.}
+            set -- 0^^^128^192^224^240^248^252^254^ $(( (${#1} - ${#x})*2 )) ${x%%.*}
+            x=${1%%$3*}
+            echo $(( $2 + (${#x}/4) ))
+          }
+
+          add_iface() {
+            local name
+            for name in "${IFACES[@]}"; do [[ "${name}" == "${1}" ]]&& return 0; done
+            IFACES+=("${1}")
+          }
+
+          render_connection() {
+            local name="${1}"
+            local ipv4="${ifipv4[${name}]:-dhcp}"
+            local ipv6="${ifipv6[${name}]:-disabled}"
+            local privacy="${ifipv6_privacy[${name}]:-on}"
+            local out=""
+            privacy="${privacy,,}"
+
+            out+="[connection]"$'\n'
+            out+="type=ethernet"$'\n'
+            out+="id=${name}"$'\n'
+            out+=$'\n'"[ethernet]"$'\n'
+            out+="mac-address=${ifmac[${name}]}"$'\n'
+            out+=$'\n'"[ipv4]"$'\n'
+            if [[ "${ipv4}" == "dhcp" ]]; then
+              out+="method=auto"$'\n'
+            else
+              out+="method=manual"$'\n'
+              out+="addresses=${ipv4}"$'\n'
+              [[ -n "${ifipv4_gw[${name}]:-}" ]]&& out+="gateway=${ifipv4_gw[${name}]}"$'\n'
+            fi
+            [[ -n "${nameservers}" ]]&& out+="dns=${nameservers}"$'\n'
+            [[ -n "${searchdomain}" ]]&& out+="dns-search=${searchdomain}"$'\n'
+            out+=$'\n'"[ipv6]"$'\n'
+            case "${ipv6}" in
+              slaac)
+                out+="method=auto"$'\n'
+                if [[ "${privacy}" =~ ^(off|no|false|0|disabled)$ ]]; then
+                  out+="ip6-privacy=0"$'\n'
+                  out+="addr-gen-mode=0"$'\n'   # eui64: address derived from the mac
+                else
+                  out+="ip6-privacy=2"$'\n'     # prefers the temporary ipv6
+                  out+="addr-gen-mode=1"$'\n'   # stable ipv6 is randomly generated
+                fi
+              ;;
+              dhcp)
+                out+="method=dhcp"$'\n'
+              ;;
+              static)
+                out+="method=manual"$'\n'
+                out+="addresses=${ifipv6_addr[${name}]:-}"$'\n'
+                [[ -n "${ifipv6_gw[${name}]:-}" ]]&& out+="gateway=${ifipv6_gw[${name}]}"$'\n'
+              ;;
+              *)
+                out+="method=disabled"$'\n'
+              ;;
+            esac
+            printf '%s' "${out}"
+          }
+
+          # ===================================================================================
+          # main()
+          [[ -x /usr/local/bin/yq ]]|| {
+            echo "[ERROR]: Network: yq not available..."
+            exit 1
+          }
+
+          if ! mount | grep -q " ${CIPATH} "; then
+            [[ ! -e /dev/sr0 ]]&& {
+              echo "[INFO]: Network: no cloudinit drive found..."
+              exit 0
+            }
+            mkdir -p ${CIPATH}
+            mount -o ro /dev/sr0 ${CIPATH} || exit 1
+            MOUNTED_BY_ME=true
+          fi
+
+          NETCONF=${CIPATH}/network-config
+          VENDOR=${CIPATH}/vendor-data
+
+          declare -A ifmac ifipv4 ifipv4_gw ifipv6 ifipv6_addr ifipv6_gw ifipv6_privacy
+          IFACES=()
+
+          # -----------------------------------------------------------------------------------
+          # base config from cloudinit
+          netcards=0 nameservers="" searchdomain=""
+          [[ -e ${NETCONF} ]]&& netcards="$(${YQ} ${NETCONF} 'config[*].name' 2>/dev/null | wc -l)"
+          [[ ${netcards} -gt 0 ]]&& {
+            nameservers="$(${YQ} ${NETCONF} "config[${netcards}].address[*]" 2>/dev/null | paste -s -d ";" -)" || nameservers=""
+            searchdomain="$(${YQ} ${NETCONF} "config[${netcards}].search[*]" 2>/dev/null | paste -s -d ";" -)" || searchdomain=""
+          }
+          for (( i=0; i<${netcards}; i++ )); do
+            name="net${i}"
+            add_iface "${name}"
+            ifmac[${name}]="$(${YQ} ${NETCONF} "config[${i}].mac_address" 2>/dev/null)" || true
+
+            ipv4_type="$(${YQ} ${NETCONF} "config[${i}].subnets[0].type" 2>/dev/null)" || ipv4_type=""
+            if [[ "${ipv4_type}" == "static" ]]; then
+              ipv4="$(${YQ} ${NETCONF} "config[${i}].subnets[0].address" 2>/dev/null)" || ipv4=""
+              netmask="$(${YQ} ${NETCONF} "config[${i}].subnets[0].netmask" 2>/dev/null)" || netmask=""
+              # NetworkManager keyfiles require a cidr prefix length,
+              # a dotted netmask makes the whole profile fail to load
+              if [[ "${ipv4}" == */* ]]; then cidr="" # address already contains a prefix
+              elif [[ "${netmask}" == *.* ]]; then cidr="/$(mask2cdr ${netmask})"
+              elif [[ -n "${netmask}" ]]; then cidr="/${netmask}"
+              else cidr="/24"; fi
+              ifipv4[${name}]="${ipv4}${cidr}"
+              ifipv4_gw[${name}]="$(${YQ} ${NETCONF} "config[${i}].subnets[0].gateway" 2>/dev/null)" || true
+            else
+              ifipv4[${name}]="dhcp"
+            fi
+
+            ipv6_type="$(${YQ} ${NETCONF} "config[${i}].subnets[1].type" 2>/dev/null)" || ipv6_type=""
+            case "${ipv6_type}" in
+              ipv6_slaac) ifipv6[${name}]="slaac" ;;
+              dhcp6)      ifipv6[${name}]="dhcp" ;;
+              static6)
+                ifipv6[${name}]="static"
+                ifipv6_addr[${name}]="$(${YQ} ${NETCONF} "config[${i}].subnets[1].address" 2>/dev/null)" || true
+                ifipv6_gw[${name}]="$(${YQ} ${NETCONF} "config[${i}].subnets[1].gateway" 2>/dev/null)" || true
+              ;;
+              *) ifipv6[${name}]="disabled" ;;
+            esac
+          done
+
+          # -----------------------------------------------------------------------------------
+          # overrides from the proxmox notes field (vendor-data network section)
+          overrides=0
+          [[ -e ${VENDOR} ]]&& overrides="$(${YQ} ${VENDOR} 'network[*].name' 2>/dev/null | wc -l)"
+          for (( i=0; i<${overrides}; i++ )); do
+            name="$(${YQ} ${VENDOR} "network[${i}].name" 2>/dev/null)" || continue
+            [[ "${name}" =~ ^net[0-9]+$ ]]|| {
+              echo "[WARN]: Network: invalid interface name \"${name}\" in notes, skipping..."
+              continue
+            }
+            add_iface "${name}"
+
+            v="$(${YQ} ${VENDOR} "network[${i}].mac" 2>/dev/null)"&& ifmac[${name}]="${v}"
+            v="$(${YQ} ${VENDOR} "network[${i}].ipv4" 2>/dev/null)"&& {
+              if [[ "${v}" == "dhcp" ]]; then
+                ifipv4[${name}]="dhcp"
+              elif [[ "${v}" == */* ]]; then
+                ifipv4[${name}]="${v}"
+              else
+                echo "[WARN]: Network: ipv4=${v} on ${name} has no prefix length, assuming /24..."
+                ifipv4[${name}]="${v}/24"
+              fi
+            }
+            v="$(${YQ} ${VENDOR} "network[${i}].ipv4_gateway" 2>/dev/null)"&& ifipv4_gw[${name}]="${v}"
+            v="$(${YQ} ${VENDOR} "network[${i}].ipv6" 2>/dev/null)"&& {
+              case "${v}" in
+                slaac|dhcp|disabled) ifipv6[${name}]="${v}" ;;
+                *) echo "[WARN]: Network: unknown ipv6 mode \"${v}\" on ${name}, ignoring..." ;;
+              esac
+            }
+            v="$(${YQ} ${VENDOR} "network[${i}].ipv6_privacy" 2>/dev/null)"&& ifipv6_privacy[${name}]="${v}"
+          done
+
+          # -----------------------------------------------------------------------------------
+          # write keyfiles, cleanup stale ones and reload on change
+          [[ ${#IFACES[@]} -eq 0 ]]&& {
+            echo "[INFO]: Network: no network configuration found, leaving system untouched..."
+            exit 0
+          }
+
+          CHANGED=false
+          WANTED=()
+          for name in "${IFACES[@]}"; do
+            [[ -n "${ifmac[${name}]:-}" ]]|| {
+              echo "[WARN]: Network: no mac address for ${name}, skipping..."
+              continue
+            }
+            WANTED+=("${name}")
+            desired="$(render_connection "${name}")"
+            file="${NMPATH}/${name}.nmconnection"
+            [[ -e "${file}" ]]&& [[ "x$(cat "${file}")" == "x${desired}" ]]&& continue
+            echo -n "[INFO]: Network: writing ${file}... "
+            install --mode=0600 /dev/null "${file}" || { echo "[failed]"; continue; }
+            printf '%s\n' "${desired}" > "${file}"
+            CHANGED=true
+            echo "[done]"
+          done
+
+          [[ ${#WANTED[@]} -eq 0 ]]&& {
+            echo "[WARN]: Network: no usable interface configuration, leaving system untouched..."
+            exit 0
+          }
+
+          # remove profiles that we manage but that are no longer configured
+          for file in "${NMPATH}"/net*.nmconnection; do
+            [[ -e "${file}" ]]|| continue
+            name="$(basename "${file}" .nmconnection)"
+            [[ "${name}" =~ ^net[0-9]+$ ]]|| continue
+            keep=false
+            for want in "${WANTED[@]}"; do [[ "${want}" == "${name}" ]]&& keep=true; done
+            ${keep} || {
+              echo "[INFO]: Network: removing stale profile ${name}..."
+              rm -f "${file}"
+              CHANGED=true
+            }
+          done
+          [[ -e "${NMPATH}/default_connection.nmconnection" ]]&& {
+            rm -f "${NMPATH}/default_connection.nmconnection"
+            CHANGED=true
+          }
+
+          ${CHANGED} || {
+            echo "[INFO]: Network: configuration unchanged..."
+            exit 0
+          }
+
+          echo "[INFO]: Network: configuration changed, reloading..."
+          nmcli connection reload || { echo "[ERROR]: Network: connection reload failed..."; exit 1; }
+          nmcli networking off
+          nmcli networking on || { echo "[ERROR]: Network: failed to re-enable networking..."; exit 1; }
+          systemctl restart arexoor-motd.service 2> /dev/null
+
+          exit 0
+
 # apply cloudinit script
     - path: /usr/local/bin/geco-cloudinit
       mode: 0755
@@ -43,7 +302,7 @@
           #  Apply Basic Cloudinit Settings
           #
           # ===================================================================================
-          declare -r VERSION=1.2011
+          declare -r VERSION=1.2607
 
           set -e
           trap 'catch $?' EXIT
@@ -105,24 +364,6 @@
             chmod 755 /usr/local/bin/yq
           }
           setup_yq
-
-          # network
-          mask2cdr()
-          {
-            # Assumes there's no "255." after a non-255 byte in the mask
-            local x=${1##*255.}
-            set -- 0^^^128^192^224^240^248^252^254^ $(( (${#1} - ${#x})*2 )) ${x%%.*}
-            x=${1%%$3*}
-            echo $(( $2 + (${#x}/4) ))
-          }
-
-          cdr2mask()
-          {
-            # Number of args to shift, 255..255, first non-255 byte, zeroes
-            set -- $(( 5 - ($1 / 8) )) 255 255 255 255 $(( (255 << (8 - ($1 % 8))) & 255 )) 0 0 0
-            [[ $1 -gt 1 ]] && shift $1 || shift
-            echo ${1-0}.${2-0}.${3-0}.${4-0}
-          }
 
           setup_virtiofs_mounts() {
             local vendor_data="${CIPATH}/vendor-data"
@@ -257,6 +498,10 @@
           # virtiofs läuft immer, unabhängig von cloudinit änderungen
           setup_virtiofs_mounts
 
+          # network läuft ebenfalls immer: file-basiert & idempotent, repariert
+          # eine kaputte konfiguration bei jedem boot (siehe geco-network)
+          /usr/local/bin/geco-network || echo "[WARN]: Cloudinit: network configuration failed..."
+
           cloudinit_instanceid="$(${YQ} ${CIPATH}/meta-data 'instance-id')"
           if [[ -e /var/.cloudinit ]]
           then
@@ -304,137 +549,7 @@
             echo -n "[INFO]: Cloudinit: wrote ssh authorized keys file for user: ${NEWUSERNAME}... "
             ${YQ} ${CIPATH}/user-data 'ssh_authorized_keys[*]' > /var/home/${NEWUSERNAME}/.ssh/authorized_keys.d/ignition 2> /dev/null || { echo "[failed]"; exit 1; }
             echo "[done]"
-            # Networking configuration
-            netcards="$(${YQ} ${CIPATH}/network-config 'config[*].name' 2> /dev/null | wc -l)"
-            nameservers="$(${YQ} ${CIPATH}/network-config "config[${netcards}].address[*]" 2> /dev/null | paste -s -d ";" -)"
-            searchdomain="$(${YQ} ${CIPATH}/network-config "config[${netcards}].search[*]" 2> /dev/null | paste -s -d ";" -)"
-            echo "[INFO]: Cloudinit: DNS Server=$nameservers - DNS Search=$searchdomain"
-            for (( i=0; i<${netcards}; i++ )); do
-              ipv4_type="" ipv4="" netmask="" gw="" macaddr="" # reset on each run
-              ipv4_type="$(${YQ} ${CIPATH}/network-config config[${i}].subnets[0].type 2>/dev/null)" || true
-              ipv4="$(${YQ} ${CIPATH}/network-config config[${i}].subnets[0].address 2> /dev/null)" || true
-              netmask="$(${YQ} ${CIPATH}/network-config config[${i}].subnets[0].netmask 2> /dev/null)" || true
-              cidr="$(mask2cdr ${netmask})" || true
-              gw="$(${YQ} ${CIPATH}/network-config config[${i}].subnets[0].gateway 2> /dev/null)" || true
-
-              macaddr="$(${YQ} ${CIPATH}/network-config config[${i}].mac_address 2> /dev/null)"
-
-              ipv6_type="" ipv6_addr="" ipv6_gw=""
-              ipv6_type="$(${YQ} ${CIPATH}/network-config config[${i}].subnets[1].type 2>/dev/null)" || true
-              ipv6_addr="$(${YQ} ${CIPATH}/network-config config[${i}].subnets[1].address 2>/dev/null)" || true
-              ipv6_gw="$(${YQ} ${CIPATH}/network-config config[${i}].subnets[1].gateway 2>/dev/null)" || true
-
-              rm -f /etc/NetworkManager/system-connections/default_connection.nmconnection # remove default connexion settings
-              if [[ -e /etc/NetworkManager/system-connections/net${i}.nmconnection ]]
-              then
-                echo "[INFO]: Cloudinit: NET$i: MAC=${macaddr}"
-                if [[ "${ipv4_type}" == "static" ]];
-                then
-                  echo "[INFO]: Cloudinit: NET$i IPv4 Network: IP=${ipv4}/${netmask} - GW=${gw:-none}"
-                  [[ "x$(nmcli connection show net${i} 2>/dev/null | grep ^ipv4.method: | awk '{print $2}')" != "xmanual" ]] && {
-                    echo -n "[INFO]: Cloudinit: update Network config ipv4 for net${i}... "
-                    nmcli c modify net${i} ipv4.addresses "" ipv4.gateway ""
-                    nmcli c modify net${i} ipv4.addresses "${ipv4}/${cidr}"
-                    nmcli c modify net${i} ipv4.method manual
-                    [[ -n "${gw}" ]] && nmcli c modify net${i} ipv4.gateway "${gw}"
-                    MUST_NET_RECONFIG=true
-                    echo "[done]"
-                  }
-                else
-                  [[ "x$(nmcli connection show net${i} 2>/dev/null | grep ^ipv4.method: | awk '{print $2}')" != "xauto" ]] && {
-                    echo "[INFO]: Cloudinit: update Network config IPv4 DHCP for net${i}... "
-                    nmcli c modify net${i} ipv4.method auto
-                    nmcli c modify net${i} ipv4.addresses "" ipv4.gateway ""
-                    MUST_NET_RECONFIG=true
-                    echo "[done]"
-                  }
-                fi
-                [[ "x${searchdomain}" != "x$(nmcli connection show net${i} 2> /dev/null | grep ^ipv4.dns-search: | awk '{print $2}' | tr ',' ';')" ]]&& {
-                  echo -n "[INFO]: Cloudinit: update Network config dns seach for net${i}... "
-                  nmcli c modify net${i} ipv4.dns-search "$(echo ${searchdomain} | tr ";" ",")"
-                  MUST_NET_RECONFIG=true
-                  echo "[done]"
-                }
-                [[ "x${nameservers}" != "x$(nmcli connection show net${i} 2> /dev/null | grep ^ipv4.dns: | awk '{print $2}' | tr ',' ';')" ]]&& {
-                  echo -n "[INFO]: Cloudinit: update Network config dns server for net${i}... "
-                  nmcli c modify net${i} ipv4.dns "$(echo ${nameservers} | tr ";" ",")"
-                  MUST_NET_RECONFIG=true
-                  echo "[done]"
-                }
-                if [[ "${ipv6_type}" == "dhcp6" ]]; then
-                  [[ "x$(nmcli connection show net${i} 2>/dev/null | grep ^ipv6.method: | awk '{print $2}')" != "xdhcp" ]] && {
-                    echo -n "[INFO]: Cloudinit: update Network config IPv6 DHCP for net${i}... "
-                    nmcli c modify net${i} ipv6.method dhcp
-                    mcli c modify net${i} ipv6.addresses "" ipv6.gateway "" ipv6.ip6-privacy -1 ipv6.addr-gen-mode default
-                    MUST_NET_RECONFIG=true
-                    echo "[done]"
-                  }
-                elif [[ "${ipv6_type}" == "static6" ]]; then
-                  echo "[INFO]: Cloudinit: NET$i IPv6 Static: IP=${ipv6_addr} - GW=${ipv6_gw:-none}"
-                  [[ "x$(nmcli connection show net${i} 2>/dev/null | grep ^ipv6.method: | awk '{print $2}')" != "xmanual" ]] && {
-                    echo -n "[INFO]: Cloudinit: update Network config IPv6 static for net${i}... "
-                    nmcli c modify net${i} ipv6.addresses "${ipv6_addr}"
-                    nmcli c modify net${i} ipv6.method manual
-                    nmcli c modify net${i} ipv6.ip6-privacy -1 ipv6.addr-gen-mode default
-                    [[ -n "${ipv6_gw}" ]] && nmcli c modify net${i} ipv6.gateway "${ipv6_gw}"
-                    MUST_NET_RECONFIG=true
-                    echo "[done]"
-                  }
-                else
-                  [[ "x$(nmcli connection show net${i} 2>/dev/null | grep ^ipv6.method: | awk '{print $2}')" != "xauto" ]] && {
-                    echo -n "[INFO]: Cloudinit: update Network config IPv6 SLAAC for net${i}... "
-                    nmcli c modify net${i} ipv6.method auto
-                    nmcli c modify net${i} ipv6.addresses "" ipv6.gateway ""
-                    nmcli c modify net${i} ipv6.ip6-privacy 2                   # prefers the temporary ipv6
-                    nmcli c modify net${i} ipv6.addr-gen-mode stable-privacy    # stable ipv6 is randomly generated
-                    MUST_NET_RECONFIG=true
-                    echo "[done]"
-                  }
-                fi
-              else
-                echo -n "[INFO]: Cloudinit: wrote NetworkManager config for net${i}... "
-                install --mode=0600 /dev/null /etc/NetworkManager/system-connections/net${i}.nmconnection &> /dev/null || { echo "[failed]"; exit 1; }
-                echo -e "[connection]\ntype=ethernet\nid=net${i}\n#interface-name=eth${i}\n" >> /etc/NetworkManager/system-connections/net${i}.nmconnection
-                echo -e "[ethernet]\nmac-address=${macaddr}\n" >> /etc/NetworkManager/system-connections/net${i}.nmconnection
-                if [[ "${ipv4_type}" == "static" ]]; then
-                  echo -e "[ipv4]\nmethod=manual\naddresses=${ipv4}/${netmask}" >> /etc/NetworkManager/system-connections/net${i}.nmconnection
-                  [[ -n "${gw}" ]] && echo -e "gateway=${gw}" >> /etc/NetworkManager/system-connections/net${i}.nmconnection
-                  echo -e "dns=${nameservers}\ndns-search=${searchdomain}" >> /etc/NetworkManager/system-connections/net${i}.nmconnection
-                else
-                  echo -e "[ipv4]\nmethod=auto\ndns=${nameservers}\ndns-search=${searchdomain}" >> /etc/NetworkManager/system-connections/net${i}.nmconnection
-                fi
-                echo -e "\n[ipv6]" >> /etc/NetworkManager/system-connections/net${i}.nmconnection
-                if [[ "${ipv6_type}" == "ipv6_slaac" ]]; then
-                  echo -e "\nmethod=auto\nip6-privacy=2\naddr-gen-mode=1" >> /etc/NetworkManager/system-connections/net${i}.nmconnection
-                elif [[ "${ipv6_type}" == "dhcp6" ]]; then
-                  echo -e "\nmethod=dhcp" >> /etc/NetworkManager/system-connections/net${i}.nmconnection
-                elif [[ "${ipv6_type}" == "static6" ]]; then
-                  echo -e "method=manual\naddresses=${ipv6_addr}" >> /etc/NetworkManager/system-connections/net${i}.nmconnection
-                  [[ -n "${ipv6_gw}" ]] && echo -e "gateway=${ipv6_gw}" >> /etc/NetworkManager/system-connections/net${i}.nmconnection
-                else
-                  echo -e "method=disabled" >> /etc/NetworkManager/system-connections/net${i}.nmconnection
-                fi
-                MUST_NET_RECONFIG=true
-                echo "[done]"
-              fi
-            done
-
-            ${MUST_NET_RECONFIG:-false} && {
-              echo "[INFO]: Cloudinit: must reload network..."
-              nmcli connection reload
-              nmcli networking off
-              nmcli networking on
-              systemctl restart arexoor-motd.service
-            }
           fi
-
-          ${MUST_NET_RECONFIG:-false}&& {
-            echo "[INFO]: Cloudinit: must reload network..."
-            nmcli connection reload
-            nmcli networking off
-            nmcli networking on
-            systemctl restart arexoor-motd.service
-          }
 
           echo -n "[INFO]: Cloudinit: save instance id... "
           echo "${cloudinit_instanceid}" > /var/.cloudinit
