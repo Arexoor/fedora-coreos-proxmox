@@ -164,8 +164,11 @@ Lines starting with `#` or `;` are treated as comments — the VM template ships
 commented example in its notes, activate it by removing the leading `#`.
 
 The pre-start hook parses the notes, writes the result into the vendor-data snippet
-(same mechanism as the virtiofs mounts) and restarts the VM once if it changed. Inside
-the VM `/usr/local/bin/geco-network` runs on every boot: it generates the NetworkManager
-keyfiles in `/etc/NetworkManager/system-connections/` from cloudinit + notes and only
-reloads the network when a file actually changed — a broken or lost network
-configuration is repaired automatically on the next boot.
+and restarts the VM once if it changed. Inside the VM `/usr/local/bin/geco-network`
+runs on every boot: it generates the NetworkManager keyfiles in
+`/etc/NetworkManager/system-connections/` from cloudinit + notes and only reloads the
+network when a file actually changed — a broken or lost network configuration is
+repaired automatically on the next boot. After a network change the affected services
+(tailscale, socket-proxy, dockhand and the qemu-guest-agent install) are restarted
+automatically, so connections killed by the change — e.g. the image pulls on the very
+first boot — recover on their own.

@@ -403,6 +403,14 @@
           nmcli networking on || { echo "[ERROR]: Network: failed to re-enable networking..."; exit 1; }
           systemctl restart arexoor-motd.service 2> /dev/null
 
+          # the network change kills the connections of services started before it
+          # (e.g. image pulls and the rpm-ostree download on first boot):
+          # restart the affected services best-effort, --no-block so a slow
+          # image pull cannot hang this script
+          echo "[INFO]: Network: restarting network dependent services..."
+          systemctl restart --no-block tailscale.service setup-qemu-guest-agent.service 2> /dev/null
+          systemctl --machine=core@.host --user restart --no-block socket-proxy-dockhand.service dockhand.service 2> /dev/null
+
           exit 0
 
 # apply cloudinit script
