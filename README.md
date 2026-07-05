@@ -164,16 +164,8 @@ Lines starting with `#` or `;` are treated as comments — the VM template ships
 commented example in its notes, activate it by removing the leading `#`.
 
 The pre-start hook parses the notes, writes the result into the vendor-data snippet
-and restarts the VM once if it changed. The merged configuration (cloudinit + notes)
-is also baked into the first-boot ignition, so a fresh VM comes up with its final
-network immediately — no mid-boot address change that would break container image
-pulls or the qemu-guest-agent install. Inside the VM `/usr/local/bin/geco-network`
-runs via `geco-network.service` *before* NetworkManager starts (plus a late fallback
-from geco-cloudinit): it generates the NetworkManager keyfiles in
-`/etc/NetworkManager/system-connections/` and only touches the running network when
-a file actually changed — a broken or lost network configuration is repaired
-automatically on the next boot.
-
-Interfaces that are neither configured by cloudinit nor by the notes are left alone:
-no keyfile is written for them, so NetworkManager's default DHCP auto-connect applies,
-exactly like vanilla Fedora CoreOS.
+(same mechanism as the virtiofs mounts) and restarts the VM once if it changed. Inside
+the VM `/usr/local/bin/geco-network` runs on every boot: it generates the NetworkManager
+keyfiles in `/etc/NetworkManager/system-connections/` from cloudinit + notes and only
+reloads the network when a file actually changed — a broken or lost network
+configuration is repaired automatically on the next boot.

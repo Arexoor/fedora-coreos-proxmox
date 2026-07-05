@@ -186,135 +186,67 @@ then
     	echo "[done]"
 
     	echo -n "Fedora CoreOS: Generate yaml network block... "
-    	# Merge cloudinit network config with the notes overrides (vendor-data) so the
-    	# very first boot already has the final network configuration. The rendered
-    	# content must stay identical to what geco-network generates inside the VM,
-    	# otherwise the first boot changes the network mid-boot again.
-    	vendor_file="${SNIPPETS_FILES_PATH}/${vmid}-vendor-data.yaml"
     	netcards="$(qm cloudinit dump ${vmid} network | ${YQ} - 'config[*].name' 2> /dev/null | wc -l)"
         nameservers="$(qm cloudinit dump ${vmid} network | ${YQ} - "config[${netcards}].address[*]" | paste -s -d ";" -)"
         searchdomain="$(qm cloudinit dump ${vmid} network | ${YQ} - "config[${netcards}].search[*]" | paste -s -d ";" -)"
-
-        declare -A ifmac ifipv4 ifipv4_gw ifipv6 ifipv6_addr ifipv6_gw ifipv6_privacy
-        IFACES=()
-        add_iface() {
-            local name
-            for name in "${IFACES[@]}"; do [[ "${name}" == "${1}" ]]&& return 0; done
-            IFACES+=("${1}")
-        }
-
-        # base config from cloudinit
         for (( i=0; i<${netcards}; i++ ))
         do
-            name="net${i}"
-            add_iface "${name}"
-            ifmac[${name}]="$(qm cloudinit dump ${vmid} network | ${YQ} - config[${i}].mac_address 2>/dev/null)" || true
+            ipv4_type="" ipv4="" netmask="" cidr="" gw="" macaddr="" # reset on each run
+            ipv6_type="" ipv6_addr="" ipv6_gw=""
 
-            ipv4_type="$(qm cloudinit dump ${vmid} network | ${YQ} - config[${i}].subnets[0].type 2>/dev/null)" || ipv4_type=""
+            ipv4_type="$(qm cloudinit dump ${vmid} network | ${YQ} - config[${i}].subnets[0].type 2>/dev/null)" || true
+            ipv4="$(qm cloudinit dump ${vmid} network | ${YQ} - config[${i}].subnets[0].address 2>/dev/null)" || true
+            netmask="$(qm cloudinit dump ${vmid} network | ${YQ} - config[${i}].subnets[0].netmask 2>/dev/null)" || true
+            gw="$(qm cloudinit dump ${vmid} network | ${YQ} - config[${i}].subnets[0].gateway 2>/dev/null)" || true
+            macaddr="$(qm cloudinit dump ${vmid} network | ${YQ} - config[${i}].mac_address 2>/dev/null)"
+
+            ipv6_type="$(qm cloudinit dump ${vmid} network | ${YQ} - config[${i}].subnets[1].type 2>/dev/null)" || true
+            ipv6_addr="$(qm cloudinit dump ${vmid} network | ${YQ} - config[${i}].subnets[1].address 2>/dev/null)" || true
+            ipv6_gw="$(qm cloudinit dump ${vmid} network | ${YQ} - config[${i}].subnets[1].gateway 2>/dev/null)" || true
+
+            echo "    - path: /etc/NetworkManager/system-connections/net${i}.nmconnection" >> ${COREOS_FILES_PATH}/${vmid}.yaml
+            echo "      mode: 0600" >> ${COREOS_FILES_PATH}/${vmid}.yaml
+            echo "      overwrite: true" >> ${COREOS_FILES_PATH}/${vmid}.yaml
+            echo "      contents:" >> ${COREOS_FILES_PATH}/${vmid}.yaml
+            echo "        inline: |" >> ${COREOS_FILES_PATH}/${vmid}.yaml
+            echo "          [connection]" >> ${COREOS_FILES_PATH}/${vmid}.yaml
+            echo "          type=ethernet" >> ${COREOS_FILES_PATH}/${vmid}.yaml
+            echo "          id=net${i}" >> ${COREOS_FILES_PATH}/${vmid}.yaml
+            echo "" >> ${COREOS_FILES_PATH}/${vmid}.yaml
+            echo "          [ethernet]" >> ${COREOS_FILES_PATH}/${vmid}.yaml
+            echo "          mac-address=${macaddr}" >> ${COREOS_FILES_PATH}/${vmid}.yaml
+            echo "" >> ${COREOS_FILES_PATH}/${vmid}.yaml
+            echo "          [ipv4]" >> ${COREOS_FILES_PATH}/${vmid}.yaml
             if [[ "${ipv4_type}" == "static" ]]; then
-                ipv4="$(qm cloudinit dump ${vmid} network | ${YQ} - config[${i}].subnets[0].address 2>/dev/null)" || ipv4=""
-                netmask="$(qm cloudinit dump ${vmid} network | ${YQ} - config[${i}].subnets[0].netmask 2>/dev/null)" || netmask=""
                 # NetworkManager keyfiles require a cidr prefix length,
                 # a dotted netmask makes the whole profile fail to load
                 if [[ "${ipv4}" == */* ]]; then cidr="" # address already contains a prefix
                 elif [[ "${netmask}" == *.* ]]; then cidr="/$(mask2cdr ${netmask})"
                 elif [[ -n "${netmask}" ]]; then cidr="/${netmask}"
                 else cidr="/24"; fi
-                ifipv4[${name}]="${ipv4}${cidr}"
-                ifipv4_gw[${name}]="$(qm cloudinit dump ${vmid} network | ${YQ} - config[${i}].subnets[0].gateway 2>/dev/null)" || true
+                echo "          method=manual" >> ${COREOS_FILES_PATH}/${vmid}.yaml
+                echo "          addresses=${ipv4}${cidr}" >> ${COREOS_FILES_PATH}/${vmid}.yaml
+                [[ -n "${gw}" ]] && echo "          gateway=${gw}" >> ${COREOS_FILES_PATH}/${vmid}.yaml
             else
-                ifipv4[${name}]="dhcp"
+                echo "          method=auto" >> ${COREOS_FILES_PATH}/${vmid}.yaml
             fi
-
-            ipv6_type="$(qm cloudinit dump ${vmid} network | ${YQ} - config[${i}].subnets[1].type 2>/dev/null)" || ipv6_type=""
-            case "${ipv6_type}" in
-                ipv6_slaac) ifipv6[${name}]="slaac" ;;
-                dhcp6)      ifipv6[${name}]="dhcp" ;;
-                static6)
-                    ifipv6[${name}]="static"
-                    ifipv6_addr[${name}]="$(qm cloudinit dump ${vmid} network | ${YQ} - config[${i}].subnets[1].address 2>/dev/null)" || true
-                    ifipv6_gw[${name}]="$(qm cloudinit dump ${vmid} network | ${YQ} - config[${i}].subnets[1].gateway 2>/dev/null)" || true
-                ;;
-                *) ifipv6[${name}]="disabled" ;;
-            esac
-        done
-
-        # overrides from the notes field (vendor-data network section)
-        overrides=0
-        [[ -e "${vendor_file}" ]]&& overrides="$(${YQ} "${vendor_file}" 'network[*].name' 2>/dev/null | wc -l)"
-        for (( i=0; i<${overrides}; i++ ))
-        do
-            name="$(${YQ} "${vendor_file}" "network[${i}].name" 2>/dev/null)" || continue
-            [[ "${name}" =~ ^net[0-9]+$ ]]|| continue
-            add_iface "${name}"
-
-            v="$(${YQ} "${vendor_file}" "network[${i}].mac" 2>/dev/null)"&& ifmac[${name}]="${v}"
-            v="$(${YQ} "${vendor_file}" "network[${i}].ipv4" 2>/dev/null)"&& {
-                if [[ "${v}" == "dhcp" ]]; then ifipv4[${name}]="dhcp"
-                elif [[ "${v}" == */* ]]; then ifipv4[${name}]="${v}"
-                else ifipv4[${name}]="${v}/24"; fi
-            }
-            v="$(${YQ} "${vendor_file}" "network[${i}].ipv4_gateway" 2>/dev/null)"&& ifipv4_gw[${name}]="${v}"
-            v="$(${YQ} "${vendor_file}" "network[${i}].ipv6" 2>/dev/null)"&& {
-                case "${v}" in slaac|dhcp|disabled) ifipv6[${name}]="${v}" ;; esac
-            }
-            v="$(${YQ} "${vendor_file}" "network[${i}].ipv6_privacy" 2>/dev/null)"&& ifipv6_privacy[${name}]="${v}"
-        done
-
-        # render one nmconnection keyfile per interface (same format as geco-network)
-        netyaml() {
-            [[ -n "${1}" ]]&& echo "          ${1}" >> ${COREOS_FILES_PATH}/${vmid}.yaml || echo "" >> ${COREOS_FILES_PATH}/${vmid}.yaml
-        }
-        for name in "${IFACES[@]}"
-        do
-            [[ -n "${ifmac[${name}]:-}" ]]|| {
-                echo "WARNING: no mac address for ${name}, skipping... "
-                continue
-            }
-            echo "    - path: /etc/NetworkManager/system-connections/${name}.nmconnection" >> ${COREOS_FILES_PATH}/${vmid}.yaml
-            echo "      mode: 0600" >> ${COREOS_FILES_PATH}/${vmid}.yaml
-            echo "      overwrite: true" >> ${COREOS_FILES_PATH}/${vmid}.yaml
-            echo "      contents:" >> ${COREOS_FILES_PATH}/${vmid}.yaml
-            echo "        inline: |" >> ${COREOS_FILES_PATH}/${vmid}.yaml
-            netyaml "[connection]"
-            netyaml "type=ethernet"
-            netyaml "id=${name}"
-            netyaml ""
-            netyaml "[ethernet]"
-            netyaml "mac-address=${ifmac[${name}]}"
-            netyaml ""
-            netyaml "[ipv4]"
-            if [[ "${ifipv4[${name}]:-dhcp}" == "dhcp" ]]; then
-                netyaml "method=auto"
+            [[ -n "${nameservers}" ]] && echo "          dns=${nameservers}" >> ${COREOS_FILES_PATH}/${vmid}.yaml
+            [[ -n "${searchdomain}" ]] && echo "          dns-search=${searchdomain}" >> ${COREOS_FILES_PATH}/${vmid}.yaml
+            echo "" >> ${COREOS_FILES_PATH}/${vmid}.yaml
+            echo "          [ipv6]" >> ${COREOS_FILES_PATH}/${vmid}.yaml
+            if [[ "${ipv6_type}" == "ipv6_slaac" ]]; then
+                echo "          method=auto" >> ${COREOS_FILES_PATH}/${vmid}.yaml
+                echo "          ip6-privacy=2" >> ${COREOS_FILES_PATH}/${vmid}.yaml
+                echo "          addr-gen-mode=1" >> ${COREOS_FILES_PATH}/${vmid}.yaml
+            elif [[ "${ipv6_type}" == "dhcp6" ]]; then
+                echo "          method=dhcp" >> ${COREOS_FILES_PATH}/${vmid}.yaml
+            elif [[ "${ipv6_type}" == "static6" ]]; then
+                echo "          method=manual" >> ${COREOS_FILES_PATH}/${vmid}.yaml
+                echo "          addresses=${ipv6_addr}" >> ${COREOS_FILES_PATH}/${vmid}.yaml
+                [[ -n "${ipv6_gw}" ]] && echo "          gateway=${ipv6_gw}" >> ${COREOS_FILES_PATH}/${vmid}.yaml
             else
-                netyaml "method=manual"
-                netyaml "addresses=${ifipv4[${name}]}"
-                [[ -n "${ifipv4_gw[${name}]:-}" ]]&& netyaml "gateway=${ifipv4_gw[${name}]}"
+                echo "          method=disabled" >> ${COREOS_FILES_PATH}/${vmid}.yaml
             fi
-            [[ -n "${nameservers}" ]]&& netyaml "dns=${nameservers}"
-            [[ -n "${searchdomain}" ]]&& netyaml "dns-search=${searchdomain}"
-            netyaml ""
-            netyaml "[ipv6]"
-            case "${ifipv6[${name}]:-disabled}" in
-                slaac)
-                    netyaml "method=auto"
-                    privacy="${ifipv6_privacy[${name}]:-on}"; privacy="${privacy,,}"
-                    if [[ "${privacy}" =~ ^(off|no|false|0|disabled)$ ]]; then
-                        netyaml "ip6-privacy=0"
-                        netyaml "addr-gen-mode=0"
-                    else
-                        netyaml "ip6-privacy=2"
-                        netyaml "addr-gen-mode=1"
-                    fi
-                ;;
-                dhcp) netyaml "method=dhcp" ;;
-                static)
-                    netyaml "method=manual"
-                    netyaml "addresses=${ifipv6_addr[${name}]:-}"
-                    [[ -n "${ifipv6_gw[${name}]:-}" ]]&& netyaml "gateway=${ifipv6_gw[${name}]}"
-                ;;
-                *) netyaml "method=disabled" ;;
-            esac
             echo "" >> ${COREOS_FILES_PATH}/${vmid}.yaml
         done
         echo "[done]"
