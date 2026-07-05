@@ -143,6 +143,11 @@ then
 	[[ -e ${COREOS_FILES_PATH}/${vmid}.id ]] && [[ "x${instance_id}" != "x$(cat ${COREOS_FILES_PATH}/${vmid}.id)" ]]&& {
 		rm -f ${COREOS_FILES_PATH}/${vmid}.ign # cloudinit config change
 	}
+	# template newer than the cached ignition ? (also catches stale caches of deleted/recreated vmids)
+	[[ -e ${COREOS_FILES_PATH}/${vmid}.ign ]] && [[ -e "${COREOS_TMPLT}" ]] && [[ "${COREOS_TMPLT}" -nt ${COREOS_FILES_PATH}/${vmid}.ign ]]&& {
+		echo "Fedora CoreOS: ignition template changed, regenerating..."
+		rm -f ${COREOS_FILES_PATH}/${vmid}.ign
+	}
 	# Ignition noch nicht vorhanden -> neu generieren
     if [[ ! -e ${COREOS_FILES_PATH}/${vmid}.ign ]]; then
         mkdir -p ${COREOS_FILES_PATH} || exit 1
