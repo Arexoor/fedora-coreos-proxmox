@@ -248,9 +248,11 @@
 
           # ===================================================================================
           # main()
+          # yq is installed by geco-cloudinit and missing on the early run of the
+          # very first boot: the ignition written config is already final then
           [[ -x /usr/local/bin/yq ]]|| {
-            echo "[ERROR]: Network: yq not available..."
-            exit 1
+            echo "[WARN]: Network: yq not available yet, skipping..."
+            exit 0
           }
 
           if ! mount | grep -q " ${CIPATH} "; then
@@ -394,6 +396,13 @@
 
           ${CHANGED} || {
             echo "[INFO]: Network: configuration unchanged..."
+            exit 0
+          }
+
+          # when running before NetworkManager (geco-network.service) the written
+          # keyfiles are simply picked up on its start, nothing to reload
+          systemctl --quiet is-active NetworkManager.service || {
+            echo "[INFO]: Network: NetworkManager not running yet, configuration will apply on start..."
             exit 0
           }
 
@@ -889,6 +898,26 @@ systemd:
         Type=oneshot
         TimeoutStartSec=0
         ExecStart=/usr/local/bin/geco-virtiofs
+        RemainAfterExit=yes
+
+        [Install]
+        WantedBy=multi-user.target
+
+# geco-network: apply network config before NetworkManager starts, so services
+# and containers never see a mid-boot address change (geco-cloudinit keeps a
+# late call as fallback, e.g. for the very first boot before yq is installed)
+    - name: geco-network.service
+      enabled: true
+      contents: |
+        [Unit]
+        Description=Geco-iT Network configuration
+        Before=NetworkManager.service
+        ConditionPathExists=/dev/sr0
+
+        [Service]
+        Type=oneshot
+        TimeoutStartSec=0
+        ExecStart=/usr/local/bin/geco-network
         RemainAfterExit=yes
 
         [Install]
