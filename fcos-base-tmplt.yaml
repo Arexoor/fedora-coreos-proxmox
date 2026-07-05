@@ -703,8 +703,8 @@
         inline: |
           [Unit]
           Description=socket-proxy-dockhand
-          After=network-online.target
-          Wants=network-online.target
+          After=network-online.target podman.socket
+          Wants=network-online.target podman.socket
 
           [Container]
           Image=ghcr.io/tecnativa/docker-socket-proxy:latest
