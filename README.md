@@ -136,6 +136,8 @@ ipv6_privacy=on
   derived from the MAC)
 
 All keys are optional, notes values override the cloudinit values per key.
+Lines starting with `#` or `;` are treated as comments — the VM template ships a
+commented example in its notes, activate it by removing the leading `#`.
 
 The pre-start hook parses the notes, writes the result into the vendor-data snippet
 (same mechanism as the virtiofs mounts) and restarts the VM once if it changed. Inside

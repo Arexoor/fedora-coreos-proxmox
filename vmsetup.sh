@@ -95,6 +95,16 @@ qm set ${TEMPLATE_VMID} --description "Fedora CoreOS - Geco-iT Template
  - Cloud-init          : true
 
 Creation date : ${template_vmcreated}
+
+Network override example (remove the leading # to activate):
+\`\`\`
+#[net0]
+#mac=bc:24:11:aa:bb:cc
+#ipv4=192.168.1.10/24
+#ipv4_gateway=192.168.1.1
+#ipv6=slaac
+#ipv6_privacy=on
+\`\`\`
 "
 
 qm set ${TEMPLATE_VMID} --net0 virtio,bridge=vmbr0

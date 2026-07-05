@@ -54,7 +54,8 @@ mask2cdr()
 
 # Parse network overrides from the VM notes (description field) and print them
 # as a yaml "network:" list for the vendor-data snippet.
-# Recognized notes syntax, everything else in the notes is ignored:
+# Lines starting with # or ; are comments, everything else outside the
+# recognized syntax is ignored:
 #   [net0]
 #   mac=bc:24:11:aa:bb:cc
 #   ipv4=192.168.1.10/24     (or: dhcp)
@@ -70,6 +71,7 @@ generate_notes_network()
     section=""
     while IFS= read -r line; do
         line="$(echo "${line}" | tr -d '\r' | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
+        [[ "${line}" =~ ^[#\;] ]] && continue # comment, e.g. the template example
         if [[ "${line}" =~ ^\[net([0-9]+)\]$ ]]; then
             section="net${BASH_REMATCH[1]}"
             echo "   - name: ${section}"
