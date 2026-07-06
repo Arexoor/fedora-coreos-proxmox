@@ -403,14 +403,6 @@
           nmcli networking on || { echo "[ERROR]: Network: failed to re-enable networking..."; exit 1; }
           systemctl restart arexoor-motd.service 2> /dev/null
 
-          # the network change kills the connections of services started before it
-          # (e.g. image pulls and the rpm-ostree download on first boot):
-          # restart the affected services best-effort, --no-block so a slow
-          # image pull cannot hang this script
-          echo "[INFO]: Network: restarting network dependent services..."
-          systemctl restart --no-block tailscale.service setup-qemu-guest-agent.service 2> /dev/null
-          systemctl --machine=core@.host --user restart --no-block socket-proxy-dockhand.service dockhand.service 2> /dev/null
-
           exit 0
 
 # apply cloudinit script
@@ -647,6 +639,8 @@
           # the tailscale-state volume lives on the virtiofs (volume_path),
           # never start without the storage mounted
           ConditionPathIsMountPoint=/var/mnt/volume-storage
+          # retry forever (e.g. image pull killed by a network reconfiguration)
+          StartLimitIntervalSec=0
 
           [Container]
           Image=docker.io/tailscale/tailscale:stable
@@ -686,6 +680,7 @@
 
           [Service]
           Restart=always
+          RestartSec=15
           TimeoutStartSec=300
           ExecStartPre=mkdir -p -m 0700 /run/tailscale
 
@@ -707,6 +702,8 @@
           Requires=tailscale.service
           # same guard as tailscale itself
           ConditionPathIsMountPoint=/var/mnt/volume-storage
+          # retry forever (e.g. image pull killed by a network reconfiguration)
+          StartLimitIntervalSec=0
 
           [Container]
           Image=ghcr.io/wollomatic/socket-proxy:1
@@ -780,6 +777,8 @@
           Description=socket-proxy-dockhand
           After=network-online.target podman.socket
           Wants=network-online.target podman.socket
+          # retry forever (e.g. image pull killed by a network reconfiguration)
+          StartLimitIntervalSec=0
 
           [Container]
           Image=ghcr.io/tecnativa/docker-socket-proxy:latest
@@ -813,6 +812,7 @@
 
           [Service]
           Restart=always
+          RestartSec=15
           TimeoutStartSec=300
 
           [Install]
@@ -831,6 +831,8 @@
           Requires=socket-proxy-dockhand.container
           # never start without the virtiofs storage mounted
           ConditionPathIsMountPoint=/var/mnt/volume-storage
+          # retry forever (e.g. image pull killed by a network reconfiguration)
+          StartLimitIntervalSec=0
 
           [Container]
           Image=docker.io/fnsys/dockhand:latest
@@ -850,6 +852,7 @@
 
           [Service]
           Restart=always
+          RestartSec=15
           TimeoutStartSec=300
           ExecStartPre=mkdir -p /var/mnt/volume-storage/dockhand/_data
 
@@ -993,14 +996,18 @@ systemd:
       contents: |
         [Unit]
         Description=arexoor Setup Qemu Guest Agent
-        After=network-online.target rpm-ostree-install-tailscale.service
-        Require=network-online.target rpm-ostree-install-tailscale.service
+        After=network-online.target
+        Wants=network-online.target
         ConditionKernelCommandLine=ignition.platform.id=qemu
         ConditionPathExists=!/var/lib/qemu-guest-agent.stamp
+        # retry forever (e.g. download killed by a network reconfiguration)
+        StartLimitIntervalSec=0
 
         [Service]
         Type=oneshot
         RemainAfterExit=yes
+        Restart=on-failure
+        RestartSec=30
         ExecStart=/bin/rpm-ostree install --reboot --idempotent --allow-inactive qemu-guest-agent
         ExecStart=/bin/touch /var/lib/qemu-guest-agent.stamp
         ExecStart=/bin/systemctl --no-block reboot

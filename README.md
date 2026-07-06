@@ -199,7 +199,10 @@ and restarts the VM once if it changed. Inside the VM `/usr/local/bin/geco-netwo
 runs on every boot: it generates the NetworkManager keyfiles in
 `/etc/NetworkManager/system-connections/` from cloudinit + notes and only reloads the
 network when a file actually changed — a broken or lost network configuration is
-repaired automatically on the next boot. After a network change the affected services
-(tailscale, socket-proxy, dockhand and the qemu-guest-agent install) are restarted
-automatically, so connections killed by the change — e.g. the image pulls on the very
-first boot — recover on their own.
+repaired automatically on the next boot.
+
+Downloads that get killed by such a network change (image pulls, the qemu-guest-agent
+install on the very first boot) recover on their own: the affected services are
+configured with `Restart=` + `StartLimitIntervalSec=0`, so systemd keeps retrying them
+(every 15s for the containers, every 30s for the guest-agent install) instead of giving
+up after the default 5 attempts.
