@@ -30,7 +30,8 @@ whose device is gone. No configuration on the host side is needed.
 Because the podman `volume_path` lives on the virtiofs (`/var/mnt/volume-storage`),
 containers are guarded against starting without their storage:
 
-* `tailscale.container` and `dockhand.container` carry
+* the container quadlets (`tailscale`, `tailscale-socket-proxy`,
+  `socket-proxy-dockhand`, `dockhand`) carry
   `ConditionPathIsMountPoint=/var/mnt/volume-storage` — if the mount failed they are
   skipped instead of writing into the empty mountpoint directory
 * user sessions (rootless quadlets) are ordered after `geco-virtiofs.service` via a
@@ -205,4 +206,9 @@ Downloads that get killed by such a network change (image pulls, the qemu-guest-
 install on the very first boot) recover on their own: the affected services are
 configured with `Restart=` + `StartLimitIntervalSec=0`, so systemd keeps retrying them
 (every 15s for the containers, every 30s for the guest-agent install) instead of giving
-up after the default 5 attempts.
+up after the default 5 attempts. Services with a `Requires=` dependency
+(`tailscale-socket-proxy`, `dockhand`) would normally stay down when the first start of
+their dependency fails — their start job gets canceled and a later successful retry of
+the dependency does not requeue them. The dependencies therefore carry `Upholds=` for
+them: whenever the dependency is running and the dependent is down, systemd starts the
+dependent again.

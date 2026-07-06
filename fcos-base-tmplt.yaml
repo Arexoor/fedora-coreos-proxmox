@@ -641,6 +641,10 @@
           ConditionPathIsMountPoint=/var/mnt/volume-storage
           # retry forever (e.g. image pull killed by a network reconfiguration)
           StartLimitIntervalSec=0
+          # when the first tailscale start fails, the proxy's start job gets
+          # canceled (Requires=) and nothing would restart it: uphold it, so it
+          # is started again whenever it is down while tailscale is running
+          Upholds=tailscale-socket-proxy.service
 
           [Container]
           Image=docker.io/tailscale/tailscale:stable
@@ -777,8 +781,14 @@
           Description=socket-proxy-dockhand
           After=network-online.target podman.socket
           Wants=network-online.target podman.socket
+          # only exists for dockhand, which needs the virtiofs storage
+          ConditionPathIsMountPoint=/var/mnt/volume-storage
           # retry forever (e.g. image pull killed by a network reconfiguration)
           StartLimitIntervalSec=0
+          # when the first socket-proxy start fails, dockhands start job gets
+          # canceled (Requires=) and nothing would restart it: uphold it, so it
+          # is started again whenever it is down while the socket-proxy runs
+          Upholds=dockhand.service
 
           [Container]
           Image=ghcr.io/tecnativa/docker-socket-proxy:latest
