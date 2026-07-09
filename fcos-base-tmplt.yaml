@@ -542,6 +542,7 @@
           Environment=TS_SOCKET=/var/run/tailscale/tailscaled.sock
           Environment=TS_HOSTNAME=CoreOS-edge-gen2
           Environment=TS_ACCEPT_DNS=true
+          Environment=TS_DEBUG_FIREWALL_MODE=nftables
 
           # Heath check
           # HealthCmd=wget -q --spider localhost:9002/healthz
