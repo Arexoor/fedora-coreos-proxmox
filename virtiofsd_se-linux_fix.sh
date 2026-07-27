@@ -8,7 +8,7 @@ cat > ${VIRTIOFS_LINK} << EOF
 # trusted.* statt user.*: user-xattrs sind auf symlinks nicht erlaubt (EPERM),
 # das SELinux-Label des Gasts wuerde daher jede symlink-Erstellung scheitern
 # lassen. trusted.* braucht CAP_SYS_ADMIN, daher --modcaps.
-exec "${VIRTIOFS_LINK}.distrib" --xattrmap=:map::trusted.virtiofs.: --security-label --modcaps=+sys_admin "\$@"
+exec "${VIRTIOFS_LINK}.distrib" --xattrmap=:map::trusted.virtiofs.: --security-label --modcaps=+sys_admin --cache=auto --inode-file-handles=prefer "\$@"
 EOF
 
 chmod +x ${VIRTIOFS_LINK}
