@@ -908,6 +908,15 @@
           start_time = "6:30"
           length_minutes = 60
 
+    # disable the systemd stub to allow running a dns server on the host
+    - path: /etc/systemd/resolved.conf.d/99-disable-stub.conf
+      mode: 0644
+      overwrite: true
+      contents:
+        inline: |
+          [Resolve]
+          DNSStubListener=no
+
 # Enabling podman.socket for the User core
   directories:
     - path: /var/home/core/.config
@@ -951,6 +960,11 @@
         name: core
       group:
         name: core
+    # disable the systemd stub to allow running a dns server on the host
+    - path: /etc/resolv.conf
+      target: /run/systemd/resolve/resolv.conf
+      overwrite: true
+      hard: false
 
 # arexoor-motd.service
 systemd:
