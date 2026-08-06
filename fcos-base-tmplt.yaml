@@ -623,6 +623,17 @@
         inline: |
           [Unit]
           After=geco-virtiofs.service
+          # rootless containers are stopped from inside the user manager and
+          # need the storage to still be there while that happens. a user unit
+          # cannot depend on a system mount unit itself, so the ordering has to
+          # sit here on the manager
+          RequiresMountsFor=/var/mnt/volume-storage
+
+          [Service]
+          # the user manager tears down every rootless container one by one,
+          # the fedora default of 45s runs out long before that is done. keep
+          # this above the TimeoutStopSec of podman-restart.service
+          TimeoutStopSec=200
 
 # dockhand deployed containers store their volumes on the virtiofs (volume_path),
 # do not restart them when the virtiofs is not mounted
@@ -632,6 +643,13 @@
         inline: |
           [Unit]
           ConditionPathIsMountPoint=/var/mnt/volume-storage
+
+          [Service]
+          # its ExecStop (podman stop --service --all) is the only thing that
+          # stops containers without a unit of their own, i.e. everything
+          # dockhand deploys. it walks them sequentially, so the fedora default
+          # of 45s leaves the rest to be sigkilled and desyncs the podman db
+          TimeoutStopSec=180
 
 # creating podman network for the reverse proxy
     - path: /etc/containers/systemd/users/1000/rproxy.network
@@ -655,8 +673,11 @@
           After=network-online.target geco-virtiofs.service
           Wants=network-online.target
           # the tailscale-state volume lives on the virtiofs (volume_path),
-          # never start without the storage mounted
+          # never start without the storage mounted, and stop before the mount
+          # goes away again: quadlet only derives RequiresMountsFor from Volume=
+          # entries with an absolute path, never from a named volume
           ConditionPathIsMountPoint=/var/mnt/volume-storage
+          RequiresMountsFor=/var/mnt/volume-storage
           # retry forever (e.g. image pull killed by a network reconfiguration)
           StartLimitIntervalSec=0
           # when the first tailscale start fails, the proxy's start job gets
@@ -724,6 +745,7 @@
           Requires=tailscale.service
           # same guard as tailscale itself
           ConditionPathIsMountPoint=/var/mnt/volume-storage
+          RequiresMountsFor=/var/mnt/volume-storage
           # retry forever (e.g. image pull killed by a network reconfiguration)
           StartLimitIntervalSec=0
 
