@@ -20,7 +20,7 @@ TEMPLATE_IGNITION="fcos-base-tmplt.yaml"
 
 # fcos version
 STREAMS=stable
-VERSION=43.20260316.3.1
+VERSION=44.20260720.3.1
 PLATEFORM=qemu
 BASEURL=https://builds.coreos.fedoraproject.org
 
@@ -78,7 +78,7 @@ esac
 # create a new VM
 echo "Create fedora coreos vm ${VMID}"
 qm create ${TEMPLATE_VMID} --name fcos-tmplt
-qm set ${TEMPLATE_VMID} --memory 4096 \
+qm set ${TEMPLATE_VMID} --memory 8192 \
 			--cpu host \
 			--cores 4 \
 			--agent enabled=1 \
