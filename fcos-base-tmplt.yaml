@@ -219,7 +219,11 @@
               out+="addresses=${ipv4}"$'\n'
               [[ -n "${ifipv4_gw[${name}]:-}" ]]&& out+="gateway=${ifipv4_gw[${name}]}"$'\n'
             fi
-            [[ -n "${nameservers}" ]]&& out+="dns=${nameservers}"$'\n'
+            [[ -n "${ns4}" ]]&& out+="dns=${ns4}"$'\n'
+            # the cloudinit nameservers are authoritative: never merge in what
+            # dhcp hands out, that is how the vm ends up resolving through the
+            # dns server it runs itself
+            [[ -n "${nameservers}" ]]&& out+="ignore-auto-dns=true"$'\n'
             [[ -n "${searchdomain}" ]]&& out+="dns-search=${searchdomain}"$'\n'
             out+=$'\n'"[ipv6]"$'\n'
             case "${ipv6}" in
@@ -245,6 +249,12 @@
                 out+="method=disabled"$'\n'
               ;;
             esac
+            # same for ipv6: a router advertising itself (or this vm) via rdnss
+            # would otherwise sneak back into the resolver list
+            [[ "${ipv6}" != "disabled" ]]&& {
+              [[ -n "${ns6}" ]]&& out+="dns=${ns6}"$'\n'
+              [[ -n "${nameservers}" ]]&& out+="ignore-auto-dns=true"$'\n'
+            }
             printf '%s' "${out}"
           }
 
@@ -273,12 +283,18 @@
 
           # -----------------------------------------------------------------------------------
           # base config from cloudinit
-          netcards=0 nameservers="" searchdomain=""
+          netcards=0 nameservers="" searchdomain="" ns4="" ns6=""
           [[ -e ${NETCONF} ]]&& netcards="$(${YQ} ${NETCONF} 'config[*].name' 2>/dev/null | wc -l)"
           [[ ${netcards} -gt 0 ]]&& {
             nameservers="$(${YQ} ${NETCONF} "config[${netcards}].address[*]" 2>/dev/null | paste -s -d ";" -)" || nameservers=""
             searchdomain="$(${YQ} ${NETCONF} "config[${netcards}].search[*]" 2>/dev/null | paste -s -d ";" -)" || searchdomain=""
           }
+
+          # NetworkManager keyfiles are per address family, an ipv6 server in
+          # the [ipv4] dns= list makes the whole profile fail to load
+          for ns in ${nameservers//;/ }; do
+            if [[ "${ns}" == *:* ]]; then ns6+="${ns};"; else ns4+="${ns};"; fi
+          done
           for (( i=0; i<${netcards}; i++ )); do
             name="net${i}"
             add_iface "${name}"
