@@ -283,12 +283,22 @@
 
           # -----------------------------------------------------------------------------------
           # base config from cloudinit
-          netcards=0 nameservers="" searchdomain="" ns4="" ns6=""
-          [[ -e ${NETCONF} ]]&& netcards="$(${YQ} ${NETCONF} 'config[*].name' 2>/dev/null | wc -l)"
-          [[ ${netcards} -gt 0 ]]&& {
-            nameservers="$(${YQ} ${NETCONF} "config[${netcards}].address[*]" 2>/dev/null | paste -s -d ";" -)" || nameservers=""
-            searchdomain="$(${YQ} ${NETCONF} "config[${netcards}].search[*]" 2>/dev/null | paste -s -d ";" -)" || searchdomain=""
+          netcards=0 entries=0 nameservers="" searchdomain="" ns4="" ns6=""
+          [[ -e ${NETCONF} ]]&& {
+            netcards="$(${YQ} ${NETCONF} 'config[*].name' 2>/dev/null | wc -l)"
+            entries="$(${YQ} ${NETCONF} 'config[*].type' 2>/dev/null | wc -l)"
           }
+
+          # the interfaces may come entirely from the notes overrides while dns
+          # still comes from cloudinit, so the nameserver lookup must not depend
+          # on netcards. the entry carries no "name" and its position shifts
+          # with the number of interfaces, so match it on its type
+          for (( i=0; i<${entries}; i++ )); do
+            [[ "$(${YQ} ${NETCONF} "config[${i}].type" 2>/dev/null)" == "nameserver" ]]|| continue
+            nameservers="$(${YQ} ${NETCONF} "config[${i}].address[*]" 2>/dev/null | paste -s -d ";" -)"
+            searchdomain="$(${YQ} ${NETCONF} "config[${i}].search[*]" 2>/dev/null | paste -s -d ";" -)"
+            break
+          done
 
           # NetworkManager keyfiles are per address family, an ipv6 server in
           # the [ipv4] dns= list makes the whole profile fail to load
@@ -712,7 +722,7 @@
           Environment=TS_AUTH_ONCE=true
           Environment=TS_SOCKET=/var/run/tailscale/tailscaled.sock
           Environment=TS_HOSTNAME=CoreOS-central-gen2
-          Environment=TS_ACCEPT_DNS=true
+          Environment=TS_ACCEPT_DNS=false
 
           # Heath check
           # HealthCmd=wget -q --spider localhost:9002/healthz
