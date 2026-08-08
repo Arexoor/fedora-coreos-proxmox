@@ -661,6 +661,17 @@
           # of 45s leaves the rest to be sigkilled and desyncs the podman db
           TimeoutStopSec=180
 
+# rootless auto-update: /etc/containers/containers.conf sets volume_path for
+# rootless too, so the quadlets below keep their volumes on the virtiofs. do not
+# pull and restart them when the storage is not mounted. the rootful counterpart
+# is a dropin on the system unit further down
+    - path: /etc/systemd/user/podman-auto-update.service.d/geco-virtiofs.conf
+      mode: 0644
+      contents:
+        inline: |
+          [Unit]
+          ConditionPathIsMountPoint=/var/mnt/volume-storage
+
 # creating podman network for the reverse proxy
     - path: /etc/containers/systemd/users/1000/rproxy.network
       mode: 0644
@@ -995,6 +1006,22 @@
         name: core
       mode: 0755
 
+    # ignition would create these as root:root while resolving the link paths
+    # below, which leaves the user manager unable to enable anything else later
+    - path: /var/home/core/.config/systemd/user/default.target.wants
+      user:
+        name: core
+      group:
+        name: core
+      mode: 0755
+
+    - path: /var/home/core/.config/systemd/user/timers.target.wants
+      user:
+        name: core
+      group:
+        name: core
+      mode: 0755
+
   links:
     - path: /var/home/core/.config/systemd/user/sockets.target.wants/podman.socket
       target: /usr/lib/systemd/user/podman.socket
@@ -1004,6 +1031,15 @@
         name: core
     - path: /var/home/core/.config/systemd/user/default.target.wants/podman-restart.service
       target: /usr/lib/systemd/user/podman-restart.service
+      user:
+        name: core
+      group:
+        name: core
+    # enable podman-auto-update.timer for the core user: butane's "enabled: true"
+    # only covers system units, a rootless unit has to be wanted by hand. the
+    # timer alone is enough, it pulls in podman-auto-update.service via Unit=
+    - path: /var/home/core/.config/systemd/user/timers.target.wants/podman-auto-update.timer
+      target: /usr/lib/systemd/user/podman-auto-update.timer
       user:
         name: core
       group:
@@ -1091,6 +1127,25 @@ systemd:
 
         [Install]
         WantedBy=multi-user.target
+
+# podman auto-update for the rootful quadlets (AutoUpdate=registry). only the
+# timer is enabled: enabling the service as well would run a full pull and
+# container restart on every boot, and the timer is Persistent=true anyway
+    - name: podman-auto-update.timer
+      enabled: true
+
+    - name: podman-auto-update.service
+      dropins:
+        - name: geco-virtiofs.conf
+          contents: |
+            [Unit]
+            # the quadlets it restarts keep their volumes on the virtiofs
+            # (volume_path), skip the run entirely while it is not mounted.
+            # no RequiresMountsFor here, unlike the containers themselves: this
+            # is a timer driven oneshot with no shutdown ordering to protect,
+            # and a hard requirement on the mount would leave a failed unit
+            # behind instead of silently skipping
+            ConditionPathIsMountPoint=/var/mnt/volume-storage
 
 # fstrim
     - name: fstrim.timer
