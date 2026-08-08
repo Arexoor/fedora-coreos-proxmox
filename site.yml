@@ -1,0 +1,18 @@
+---
+- name: Configure Raspberry Pi
+  hosts: raspberrypi
+  become: true
+
+  roles:
+    - dns
+
+  post_tasks:
+    - name: Read back the DNS servers in use on the interface
+      ansible.builtin.command:
+        cmd: nmcli -g IP4.DNS device show {{ dns_interface }}
+      changed_when: false
+      register: dns_effective
+
+    - name: Show the DNS servers in use on the interface
+      ansible.builtin.debug:
+        var: dns_effective.stdout_lines

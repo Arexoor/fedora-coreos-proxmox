@@ -1,0 +1,21 @@
+---
+# NetworkManager connection profile to manage. Note the space in the name --
+# it is part of the keyfile filename too.
+dns_connection_name: Wired connection 1
+dns_connection_file: >-
+  /etc/NetworkManager/system-connections/{{ dns_connection_name }}.nmconnection
+
+# Interface the profile is bound to. Used by `nmcli device reapply`.
+dns_interface: eth0
+
+# Written to [ipv4] dns=. NetworkManager stores these semicolon-separated
+# with a trailing semicolon.
+dns_servers:
+  - 10.0.10.2
+  - 10.0.10.21
+  - 10.0.10.1
+
+# Lower value = consulted first. NetworkManager's default is 100, so 10 puts
+# these servers ahead of the DHCP-supplied ones while leaving those in place
+# as a fallback. A negative value would make them exclusive instead.
+dns_priority: 10

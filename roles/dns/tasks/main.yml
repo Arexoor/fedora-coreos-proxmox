@@ -1,0 +1,36 @@
+---
+- name: Look up the NetworkManager keyfile
+  ansible.builtin.stat:
+    path: "{{ dns_connection_file }}"
+  register: dns_keyfile
+
+- name: Fail early if the connection profile is missing
+  ansible.builtin.assert:
+    that: dns_keyfile.stat.exists
+    fail_msg: >-
+      {{ dns_connection_file }} not found. List the real profile names with
+      `nmcli -g NAME connection show` and override dns_connection_name.
+
+- name: Set DNS servers and priority on the wired connection
+  community.general.ini_file:
+    path: "{{ dns_connection_file }}"
+    section: ipv4
+    option: "{{ item.option }}"
+    value: "{{ item.value }}"
+    # NetworkManager writes `key=value`; without this ini_file would rewrite
+    # every line it touches as `key = value`.
+    no_extra_spaces: true
+    owner: root
+    group: root
+    # NetworkManager refuses to load a keyfile that is group- or
+    # world-readable, so this is enforced on every run, not just on change.
+    mode: "0600"
+    backup: true
+  loop:
+    - option: dns
+      value: "{{ dns_servers | join(';') }};"
+    - option: dns-priority
+      value: "{{ dns_priority }}"
+  loop_control:
+    label: "{{ item.option }}"
+  notify: Reload NetworkManager

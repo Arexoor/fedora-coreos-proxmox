@@ -1,0 +1,15 @@
+---
+- name: Reload connection profiles from disk
+  listen: Reload NetworkManager
+  ansible.builtin.command:
+    cmd: nmcli connection reload
+  changed_when: true
+
+# `nmcli connection up` would deactivate the link first and drop our own SSH
+# session. `device reapply` pushes the new settings onto the running device
+# in place.
+- name: Reapply settings to the interface
+  listen: Reload NetworkManager
+  ansible.builtin.command:
+    cmd: nmcli device reapply {{ dns_interface }}
+  changed_when: true
