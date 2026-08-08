@@ -1,0 +1,32 @@
+[Unit]
+Description=hawser
+# The container bind-mounts the rootless podman socket, so it must not start
+# before podman.socket has created it.
+Requires=podman.socket
+After=podman.socket
+
+[Container]
+Image={{ hawser_image }}
+ContainerName=hawser
+AutoUpdate=registry
+
+# Persist state across reboots
+Volume={{ hawser_storage_dir }}:{{ hawser_storage_dir }}
+Volume={{ podman_rootless_xdg }}/podman/podman.sock:/var/run/docker.sock
+Tmpfs=/data/stacks
+{% if hawser_dns | length > 0 %}
+
+DNS={{ hawser_dns }}
+{% endif %}
+
+Environment=STACKS_DIR={{ hawser_storage_dir }}
+Environment=DOCKHAND_SERVER_URL={{ hawser_server_url }}
+Environment=AGENT_NAME={{ hawser_agent_name }}
+EnvironmentFile={{ hawser_env_file }}
+
+[Service]
+Restart=always
+TimeoutStartSec=300
+
+[Install]
+WantedBy=default.target

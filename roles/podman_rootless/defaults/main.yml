@@ -1,0 +1,22 @@
+---
+# User that owns the rootless podman instance. UID and home directory are
+# looked up at runtime rather than hardcoded, so this is the only knob.
+podman_rootless_user: core
+
+# Drives AutoUpdate=registry in the quadlets. The timer is daily and
+# Persistent=true, so a missed run is caught up after boot.
+podman_rootless_auto_update: true
+
+# The timer has no explicit Unit=, so it already activates
+# podman-auto-update.service on schedule. Enabling that service on top wires it
+# into default.target as well, which means a full image pull and container
+# restart on *every* boot -- see the note on the main branch of
+# fcos-base-tmplt.yaml. Off unless you really want that.
+podman_rootless_auto_update_service: false
+
+# `systemctl --user` needs both of these; with only XDG_RUNTIME_DIR it fails
+# with "Failed to connect to user scope bus". Templated lazily, so it resolves
+# after podman_rootless_xdg has been set.
+podman_rootless_env:
+  XDG_RUNTIME_DIR: "{{ podman_rootless_xdg }}"
+  DBUS_SESSION_BUS_ADDRESS: "unix:path={{ podman_rootless_xdg }}/bus"

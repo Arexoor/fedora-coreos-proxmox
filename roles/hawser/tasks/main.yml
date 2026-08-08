@@ -1,0 +1,56 @@
+---
+# The FCOS template created these with ExecStartPre= inside the unit. Doing it
+# here instead keeps the unit free of setup logic and means the directory is
+# already in place, owned correctly, before the first start.
+- name: Create the quadlet storage directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ podman_rootless_user }}"
+    group: "{{ podman_rootless_user }}"
+    mode: "0755"
+  loop:
+    - "{{ podman_rootless_home }}/quadlet-storage"
+    - "{{ hawser_storage_dir }}"
+
+# With no hawser_token set, force=false seeds a placeholder once and never
+# clobbers a token edited on the host. With one set, force=true keeps it synced.
+- name: Write the hawser environment file
+  ansible.builtin.copy:
+    dest: "{{ hawser_env_file }}"
+    content: "TOKEN={{ hawser_token if hawser_token | length > 0 else 'private_token' }}\n"
+    owner: "{{ podman_rootless_user }}"
+    group: "{{ podman_rootless_user }}"
+    mode: "0400"
+    force: "{{ hawser_token | length > 0 }}"
+  no_log: true
+  notify: Restart hawser
+
+- name: Install the hawser quadlet
+  ansible.builtin.template:
+    src: hawser.container.j2
+    dest: "/etc/containers/systemd/users/{{ podman_rootless_uid }}/hawser.container"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart hawser
+
+# Without this the handlers would only fire at the end of the play, so on a
+# first run the generator would not have produced hawser.service yet and the
+# task below would fail with "Could not find the requested service".
+- name: Run the quadlet generator before checking the service
+  ansible.builtin.meta: flush_handlers
+
+# Quadlet units are generated, so `systemctl --user enable` does not apply --
+# the [Install] section is handled by the generator during daemon-reload.
+# Catches the case where nothing changed but the container is not running.
+- name: Make sure hawser is running
+  vars:
+    ansible_become: false
+  environment: "{{ podman_rootless_env }}"
+  ansible.builtin.systemd_service:
+    name: hawser.service
+    scope: user
+    state: started
+  # In check mode the unit was never generated, so there is nothing to query.
+  when: not ansible_check_mode

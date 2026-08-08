@@ -1,0 +1,102 @@
+---
+# The user-scope tasks below talk to the login session of the connecting user,
+# so the play has to come in as that user rather than escalating to them.
+- name: Check that we connect as the podman user
+  ansible.builtin.assert:
+    that: ansible_user | default('') == podman_rootless_user
+    fail_msg: >-
+      This role drives the rootless user session over the SSH connection
+      itself, so ansible_user must be {{ podman_rootless_user }}
+      (currently: {{ ansible_user | default('unset') }}).
+
+- name: Look up the podman user
+  ansible.builtin.getent:
+    database: passwd
+    key: "{{ podman_rootless_user }}"
+
+- name: Derive UID, home and runtime directory
+  ansible.builtin.set_fact:
+    podman_rootless_uid: "{{ ansible_facts.getent_passwd[podman_rootless_user][1] }}"
+    podman_rootless_home: "{{ ansible_facts.getent_passwd[podman_rootless_user][4] }}"
+    podman_rootless_xdg: "/run/user/{{ ansible_facts.getent_passwd[podman_rootless_user][1] }}"
+
+# Rootless podman maps container UIDs into these ranges. Without them
+# `podman run` fails outright, so fail here with a clear message instead.
+- name: Read the subordinate ID ranges
+  ansible.builtin.slurp:
+    src: "{{ item }}"
+  register: podman_rootless_subids
+  loop:
+    - /etc/subuid
+    - /etc/subgid
+
+- name: Check that both subordinate ranges cover the user
+  ansible.builtin.assert:
+    that:
+      - >-
+        podman_rootless_subids.results
+        | map(attribute='content') | map('b64decode')
+        | select('search', '(^|\n)' ~ podman_rootless_user ~ ':')
+        | list | length == 2
+    fail_msg: >-
+      {{ podman_rootless_user }} is missing from /etc/subuid and/or /etc/subgid,
+      so rootless podman cannot map container UIDs. Fix with:
+      usermod --add-subuids 100000-165535 --add-subgids 100000-165535
+      {{ podman_rootless_user }}
+
+# Without lingering the user manager is torn down at logout, which would stop
+# every rootless container and keep them from starting at boot.
+- name: Enable lingering for {{ podman_rootless_user }}
+  ansible.builtin.command:
+    cmd: loginctl enable-linger {{ podman_rootless_user }}
+  args:
+    creates: "/var/lib/systemd/linger/{{ podman_rootless_user }}"
+
+- name: Bring up the rootless podman socket
+  # ansible_become as a task var, not the become keyword: the inventory sets
+  # ansible_become=true as a group var, which wins over the keyword.
+  vars:
+    ansible_become: false
+  environment: "{{ podman_rootless_env }}"
+  block:
+    - name: Enable and start the rootless podman socket
+      ansible.builtin.systemd_service:
+        name: podman.socket
+        scope: user
+        enabled: true
+        state: started
+
+    - name: Wait for the socket to appear
+      ansible.builtin.wait_for:
+        path: "{{ podman_rootless_xdg }}/podman/podman.sock"
+        timeout: 30
+
+    # Without this, AutoUpdate=registry in the quadlets never actually fires.
+    - name: Enable the rootless podman auto-update timer
+      ansible.builtin.systemd_service:
+        name: podman-auto-update.timer
+        scope: user
+        enabled: true
+        state: started
+      # | bool so that -e podman_rootless_auto_update=false, which arrives as a
+      # string, is not treated as a non-boolean conditional.
+      when: podman_rootless_auto_update | bool
+
+    # No state: here on purpose -- starting a oneshot would immediately pull
+    # and restart every container.
+    - name: Enable the rootless podman auto-update service
+      ansible.builtin.systemd_service:
+        name: podman-auto-update.service
+        scope: user
+        enabled: true
+      when:
+        - podman_rootless_auto_update | bool
+        - podman_rootless_auto_update_service | bool
+
+- name: Create the quadlet drop-in directory for this user
+  ansible.builtin.file:
+    path: "/etc/containers/systemd/users/{{ podman_rootless_uid }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"

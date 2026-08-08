@@ -5,6 +5,10 @@
 
   roles:
     - dns
+    # podman_rootless must precede hawser: it exports podman_rootless_uid,
+    # _home and _xdg, which the hawser role's paths are built from.
+    - podman_rootless
+    - hawser
 
   post_tasks:
     - name: Read back the DNS servers in use on the interface

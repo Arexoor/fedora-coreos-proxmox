@@ -1,0 +1,24 @@
+---
+# daemon-reload re-runs the quadlet generator, which turns the .container file
+# into hawser.service and wires up its [Install] section.
+- name: Regenerate quadlet units
+  listen: Restart hawser
+  vars:
+    ansible_become: false
+  environment: "{{ podman_rootless_env }}"
+  ansible.builtin.systemd_service:
+    daemon_reload: true
+    scope: user
+
+- name: Restart the hawser container
+  listen: Restart hawser
+  vars:
+    ansible_become: false
+  environment: "{{ podman_rootless_env }}"
+  ansible.builtin.systemd_service:
+    name: hawser.service
+    scope: user
+    state: restarted
+  # In check mode the .container file was never written, so the generator has
+  # not produced hawser.service and there is nothing to restart.
+  when: not ansible_check_mode

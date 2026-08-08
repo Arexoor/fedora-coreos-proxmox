@@ -1,0 +1,18 @@
+---
+hawser_image: ghcr.io/finsys/hawser:latest
+hawser_agent_name: pi
+hawser_server_url: wss://dockhand.arexoor.dev/api/hawser/connect
+
+# Bind-mounted into the container and used as STACKS_DIR.
+hawser_storage_dir: "{{ podman_rootless_home }}/quadlet-storage/hawser"
+hawser_env_file: "{{ podman_rootless_home }}/quadlet-storage/hawser.env"
+
+# Leave empty and the env file is seeded once with a placeholder and then left
+# alone, so a token edited on the host survives re-runs. Set it (ideally from
+# vault) and Ansible takes ownership of the file and keeps it in sync.
+hawser_token: ""
+
+# The FCOS template pins DNS=100.100.100.100 (Tailscale MagicDNS). There is no
+# Tailscale on the pi, so that would leave the container unable to resolve
+# anything. Empty means: inherit the host's resolver.
+hawser_dns: ""
